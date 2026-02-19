@@ -13,7 +13,7 @@ export default function App() {
 
   return (
     <div style={{ padding: 24, fontFamily: "sans-serif" }}>
-      <h1>Peer-to-Peer Book Exchange (Vite)</h1>
+      <h1>Peer-to-Peer Book Exchange</h1>
       <p><strong>API Base:</strong> {apiBase}</p>
       <p><strong>API Status:</strong> {status}</p>
     </div>
