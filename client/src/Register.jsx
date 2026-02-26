@@ -1,4 +1,6 @@
 import React, { useState } from "react";
+import { useNavigate } from "react-router-dom";
+import { getApiBaseUrl } from "./apiBaseUrl";
 
 function Register() {
   const [formData, setFormData] = useState({
@@ -12,13 +14,40 @@ function Register() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const navigate = useNavigate();
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
     if (formData.password !== formData.confirmPassword) {
       alert("Passwords do not match!");
       return;
     }
-    console.log("Registering Panther:", formData.email);
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/api/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          fullName: formData.fullName,
+          email: formData.email,
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        alert(data.error || "Registration failed.");
+        return;
+      }
+
+      alert(data.message || "Account created. Check your email for a verification code.");
+      navigate("/verify-email", { state: { email: formData.email } });
+    } catch (_error) {
+      alert("Could not reach server. Please try again.");
+    }
   };
 
   const colors = {

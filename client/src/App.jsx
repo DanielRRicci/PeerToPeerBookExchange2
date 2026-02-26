@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Link } from "react-router-dom";
 
 import Login from "./Login.jsx";
 import Register from "./Register.jsx";
+import VerifyEmail from "./VerifyEmail.jsx";
 import BookListings from "./BookListings.jsx";
 import PostBook from "./PostBook.jsx";
 import Profile from "./Profile.jsx";
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/" element={<Login />} />
           <Route path="/login" element={<Login />} />
           <Route path="/register" element={<Register />} />
+          <Route path="/verify-email" element={<VerifyEmail />} />
           <Route path="/booklistings" element={<BookListings />} />
           <Route path="/post" element={<PostBook />} />
           <Route path="/profile" element={<Profile />} />
