@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Link } from "react-router-dom";
 
 function Register() {
   const [formData, setFormData] = useState({
@@ -30,23 +31,27 @@ function Register() {
 
   const styles = {
     wrapper: {
+      position: "fixed", // fix wrapper to viewport
+      top: 0,
+      left: 0,
+      width: "100vw",
+      height: "100vh",
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
-      minHeight: "100vh",
-      width: "100vw",
-      margin: 0,
-      padding: "20px",
-      boxSizing: "border-box",
       fontFamily: "'Inter', 'Segoe UI', Roboto, sans-serif",
-      // Matching the "Students with books" background
-      backgroundImage: 'linear-gradient(rgba(0, 0, 0, 0.6), rgba(0, 0, 0, 0.5)), url("https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=2070&auto=format&fit=crop")',
+      backgroundImage:
+        'linear-gradient(rgba(0,0,0,0.6), rgba(0,0,0,0.5)), url("https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=2070&auto=format&fit=crop")',
       backgroundSize: "cover",
       backgroundPosition: "center",
+      backgroundAttachment: "fixed", // keep background stationary
+      overflow: "hidden", // prevent page scroll
     },
     card: {
-      width: "100%",
-      maxWidth: "450px", // Slightly wider for the registration form
+      width: "90%",
+      maxWidth: "450px",
+      maxHeight: "90vh", // prevent card from exceeding viewport
+      overflowY: "auto", // scroll inside card if content is too tall
       backgroundColor: colors.white,
       padding: "2.5rem",
       borderRadius: "12px",
@@ -115,7 +120,7 @@ function Register() {
       fontWeight: "bold",
       textDecoration: "none",
       borderBottom: `2px solid ${colors.gold}`,
-    }
+    },
   };
 
   return (
@@ -179,7 +184,7 @@ function Register() {
         </form>
 
         <div style={styles.footerLink}>
-          Already swapping books? <a href="/login" style={styles.link}>Sign In</a>
+          Already swapping books? <Link to="/login" style={styles.link}>Sign In</Link>
         </div>
       </div>
     </div>
