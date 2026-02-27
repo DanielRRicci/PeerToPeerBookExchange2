@@ -1,5 +1,8 @@
 import React, { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate } from 'react-router-dom';
+import { getApiBaseUrl } from "./apiBaseUrl";
+import { setStoredUser } from "./auth";
 
 function Login() {
   const [email, setEmail] = useState("");
@@ -7,7 +10,7 @@ function Login() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     const normalEmail = email.trim().toLowerCase();
 
@@ -19,6 +22,36 @@ function Login() {
     setError("");
     console.log("Logging in:", normalEmail);
     navigate("/booklistings");
+    if (!password) {
+      setError("Please enter your password.");
+      return;
+    }
+
+    setError("");
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const response = await fetch(`${baseUrl}/api/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalEmail, password }),
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        if (response.status === 403 && data.requiresVerification) {
+          navigate("/verify-email", { state: { email: normalEmail } });
+          return;
+        }
+        setError(data.error || "Login failed. Please try again.");
+        return;
+      }
+
+      setStoredUser(data.user);
+      navigate("/booklistings");
+    } catch (_error) {
+      setError("Could not reach server. Please try again.");
+    }
   };
 
   const colors = {
