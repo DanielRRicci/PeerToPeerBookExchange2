@@ -1,9 +1,8 @@
-import "./App.css"; 
+import "./App.css";
 import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react-router-dom";
 
 import Login from "./Login.jsx";
 import Register from "./Register.jsx";
-import VerifyEmail from "./VerifyEmail.jsx";
 import BookListings from "./BookListings.jsx";
 import PostBook from "./PostBook.jsx";
 import Profile from "./Profile.jsx";
@@ -12,12 +11,11 @@ import Profile from "./Profile.jsx";
 function AppContent() {
   const location = useLocation();
 
-  // Hide header and navbar on these pages (Login/Register)
+  // Hide header and navbar on these pages
   const hideNav = location.pathname === "/" || location.pathname === "/login" || location.pathname === "/register";
 
   return (
-    <div style={{ padding: hideNav ? 0 : 24, fontFamily: "sans-serif" }}>
-      {/* Show header and navbar only on non-login/register pages */}
+    <div style={{ padding: 24, fontFamily: "sans-serif" }}>
       {!hideNav && <h1>Peer-to-Peer Book Exchange</h1>}
 
       {!hideNav && (
@@ -31,13 +29,9 @@ function AppContent() {
       )}
 
       <Routes>
-        {/* Login and Register keep their own fixed background */}
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
-        <Route path="/verify-email" element={<VerifyEmail />} />
-
-        {/* Other pages with normal layout */}
         <Route path="/booklistings" element={<BookListings />} />
         <Route path="/post" element={<PostBook />} />
         <Route path="/profile" element={<Profile />} />

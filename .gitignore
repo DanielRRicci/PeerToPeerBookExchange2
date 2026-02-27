@@ -1,7 +1,3 @@
 node_modules/
 server/node_modules/
 .env
-# frontend env (Vite uses .env.local by default; we ignore all env files)
-client/.env*
-# example files
-server/.env.example
