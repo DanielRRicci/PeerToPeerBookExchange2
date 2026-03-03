@@ -7,19 +7,39 @@ function Login() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    const normalEmail = email.trim().toLowerCase();
+  // --- NEW CODE TO PASTE IN ---
+const handleSubmit = async (e) => {
+  e.preventDefault();
+  const normalEmail = email.trim().toLowerCase();
 
-    if (!normalEmail.endsWith("@uwm.edu")) {
-      setError("Please use your UWM email (@uwm.edu)");
-      return;
+  if (!normalEmail.endsWith("@uwm.edu")) {
+    setError("Please use your UWM email (@uwm.edu)");
+    return;
+  }
+
+  setError("");
+  
+  try {
+    // This calls your backend server
+    const response = await fetch("http://localhost:5000/api/login", { 
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: normalEmail, password: password }),
+    });
+
+    const data = await response.json();
+
+    if (response.ok) {
+      // If the backend says "OK", go to the listings
+      navigate("/booklistings");
+    } else {
+      // If the backend says "No", show the error message from the server
+      setError(data.error || data.message || "Invalid credentials");
     }
-
-    setError("");
-    console.log("Logging in:", normalEmail);
-    navigate("/booklistings");
-  };
+  } catch (err) {
+    setError("Connection failed. Is the server running?");
+  }
+};
 
   const colors = {
     gold: "#FFBD00",

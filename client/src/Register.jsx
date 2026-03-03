@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 
 function Register() {
   const [formData, setFormData] = useState({
@@ -8,18 +8,56 @@ function Register() {
     password: "",
     confirmPassword: "",
   });
+  
+  // Added error state and navigate hook
+  const [error, setError] = useState("");
+  const navigate = useNavigate();
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(""); // Clear previous errors
+
+    // 1. Frontend validation: Match passwords
     if (formData.password !== formData.confirmPassword) {
-      alert("Passwords do not match!");
+      setError("Passwords do not match!");
       return;
     }
-    console.log("Registering Panther:", formData.email);
+
+    // 2. Frontend validation: UWM email check
+    if (!formData.email.trim().toLowerCase().endsWith("@uwm.edu")) {
+      setError("Please use your UWM email (@uwm.edu)");
+      return;
+    }
+
+    try {
+      // 3. Send data to the backend
+      const response = await fetch("http://localhost:5000/api/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          fullName: formData.fullName, 
+          email: formData.email.trim().toLowerCase(),
+          password: formData.password,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        // 4. Success -> go to login
+        alert("Registration successful! Please sign in.");
+        navigate("/login"); 
+      } else {
+        // Show the error from the backend (e.g., "Email already registered")
+        setError(data.error || data.message || "Registration failed");
+      }
+    } catch (err) {
+      setError("Could not connect to server. Is it running on port 5000?");
+    }
   };
 
   const colors = {
@@ -107,7 +145,7 @@ function Register() {
       fontWeight: "bold",
       fontSize: "1rem",
       cursor: "pointer",
-      marginTop: "15px",
+      marginTop: "5px",
       textTransform: "uppercase",
     },
     footerLink: {
@@ -177,6 +215,9 @@ function Register() {
               required
             />
           </div>
+
+          {/* Error message display */}
+          {error && <p style={{ color: "red", fontSize: "0.9rem", marginBottom: "10px", textAlign: "left" }}>{error}</p>}
 
           <button type="submit" style={styles.button}>
             Create Panther Account
