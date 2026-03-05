@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Link, useLocation } from "react
 
 import Login from "./Login.jsx";
 import Register from "./Register.jsx";
+import VerifyEmail from "./VerifyEmail.jsx";
 import BookListings from "./BookListings.jsx";
 import PostBook from "./PostBook.jsx";
 import Profile from "./Profile.jsx";
@@ -22,6 +23,7 @@ function AppContent() {
         <div style={{ display: "flex", gap: 12, margin: "12px 0 24px" }}>
           <Link to="/login">Login</Link>
           <Link to="/register">Register</Link>
+          <Link to="/verify-email">VerifyEmail</Link>
           <Link to="/booklistings">Listings</Link>
           <Link to="/post">Post</Link>
           <Link to="/profile">Profile</Link>
@@ -32,6 +34,7 @@ function AppContent() {
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />
         <Route path="/register" element={<Register />} />
+        <Route path="/verify-email" element={<VerifyEmail />} />
         <Route path="/booklistings" element={<BookListings />} />
         <Route path="/post" element={<PostBook />} />
         <Route path="/profile" element={<Profile />} />
