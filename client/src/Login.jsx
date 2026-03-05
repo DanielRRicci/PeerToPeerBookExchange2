@@ -1,7 +1,4 @@
 import React, { useState } from "react";
-import { Link, useNavigate } from 'react-router-dom';
-import { getApiBaseUrl } from "./apiBaseUrl";
-import { setStoredUser } from "./auth";
 import { Link, useNavigate } from "react-router-dom";
 
 function Login() {
@@ -10,39 +7,7 @@ function Login() {
   const [error, setError] = useState("");
   const navigate = useNavigate();
 
-//   // --- NEW CODE TO PASTE IN ---
-// const handleSubmit = async (e) => {
-//   e.preventDefault();
-//   const normalEmail = email.trim().toLowerCase();
-
-//   if (!normalEmail.endsWith("@uwm.edu")) {
-//     setError("Please use your UWM email (@uwm.edu)");
-//     return;
-//   }
-
-//   setError("");
-  
-//   try {
-//     // This calls your backend server
-//     const response = await fetch("http://localhost:5000/api/login", { 
-//       method: "POST",
-//       headers: { "Content-Type": "application/json" },
-//       body: JSON.stringify({ email: normalEmail, password: password }),
-//     });
-
-//     const data = await response.json();
-
-//     if (response.ok) {
-//       // If the backend says "OK", go to the listings
-//       navigate("/booklistings");
-//     } else {
-//       // If the backend says "No", show the error message from the server
-//       setError(data.error || data.message || "Invalid credentials");
-//     }
-//   } catch (err) {
-//     setError("Connection failed. Is the server running?");
-//   }
-// };
+  // --- NEW CODE TO PASTE IN ---
 const handleSubmit = async (e) => {
   e.preventDefault();
   const normalEmail = email.trim().toLowerCase();
@@ -53,33 +18,26 @@ const handleSubmit = async (e) => {
   }
 
   setError("");
-
+  
   try {
-    const baseUrl = getApiBaseUrl();
-    const response = await fetch(`${baseUrl}/api/login`, {
+    // This calls your backend server
+    const response = await fetch("http://localhost:5000/api/login", { 
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: normalEmail, password }),
+      body: JSON.stringify({ email: normalEmail, password: password }),
     });
 
     const data = await response.json();
 
-    if (!response.ok) {
-      // If backend says user must verify email
-      if (response.status === 403 && data.requiresVerification) {
-        navigate("/verify-email", { state: { email: normalEmail } });
-        return;
-      }
-
+    if (response.ok) {
+      // If the backend says "OK", go to the listings
+      navigate("/booklistings");
+    } else {
+      // If the backend says "No", show the error message from the server
       setError(data.error || data.message || "Invalid credentials");
-      return;
     }
-
-    // Persist auth + navigate to booklistings
-    setStoredUser(data.user);
-    navigate("/booklistings");
-  } catch (_err) {
-    setError("Could not reach server. Please try again.");
+  } catch (err) {
+    setError("Connection failed. Is the server running?");
   }
 };
 

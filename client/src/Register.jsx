@@ -1,6 +1,4 @@
 import React, { useState } from "react";
-import { useNavigate } from "react-router-dom";
-import { getApiBaseUrl } from "./apiBaseUrl";
 import { Link, useNavigate } from "react-router-dom";
 
 function Register() {
@@ -37,8 +35,7 @@ function Register() {
 
     try {
       // 3. Send data to the backend
-      const baseUrl = getApiBaseUrl();
-      const response = await fetch(`${baseUrl}/api/register`, {
+      const response = await fetch("http://localhost:5000/api/register", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
