@@ -50,9 +50,10 @@ function Register() {
       const data = await response.json();
 
       if (response.ok) {
-        // 4. Success -> go to login
-        alert("Registration successful! Please sign in.");
-        navigate("/login"); 
+        navigate("/verify-email",{
+          state: { email: formData.email.trim().toLowerCase() },
+        });
+        return;
       } else {
         // Show the error from the backend (e.g., "Email already registered")
         setError(data.error || data.message || "Registration failed");
