@@ -23,7 +23,7 @@ function BookListings() {
   useEffect(() => {
     const fetchListings = async () => {
       try {
-        const response = await fetch("http://localhost:5000/listings"); 
+        const response = await fetch("http://localhost:5000/BookListings"); 
         if (!response.ok) throw new Error("Failed to fetch listings");
         
         const data = await response.json();
@@ -41,13 +41,14 @@ function BookListings() {
   // Filter the books from the database
   let processedBooks = books.filter((book) => {
     const title = book.title || "";
-    const description = book.description || ""; // Using description instead of course
+    // NEW: Look for course_code from the DB
+    const course = book.course_code || ""; 
     
     const matchesSearch = title.toLowerCase().includes(searchTerm.toLowerCase()) || 
-                          description.toLowerCase().includes(searchTerm.toLowerCase());
+                          course.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Filters through all because no "course" column exists yet
-    const matchesCategory = category === "All" || description.includes(category);
+    // NEW: Filter by the course variable
+    const matchesCategory = category === "All" || course.includes(category);
     
     return matchesSearch && matchesCategory;
   });
@@ -162,19 +163,20 @@ function BookListings() {
           ) : processedBooks.length > 0 ? (
             processedBooks.map((book) => (
               <div 
-                key={book.id || book.listing_id} // Fallback to handle different DB id names
+                key={book.listing_id} // Updated to exact DB name
                 style={styles.card}
                 onMouseOver={(e) => e.currentTarget.style.transform = "translateY(-5px)"}
                 onMouseOut={(e) => e.currentTarget.style.transform = "translateY(0)"}
               >
-                {/* Fallback image since your DB doesn't have an image column yet */}
+                {/* Updated to book.image_url */}
                 <img 
-                  src={book.image || "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=1000"} 
+                  src={book.image_url || "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=1000"} 
                   alt={book.title} 
                   style={styles.cardImage} 
                 />
                 <div style={styles.cardContent}>
-                  <div style={styles.courseBadge}>{book.condition || "Used"}</div>
+                  {/* Updated to display the course code (e.g., CompSci 315) */}
+                  <div style={styles.courseBadge}>{book.course_code || "General"}</div>
                   <div style={styles.bookTitle}>{book.title}</div>
                   <div style={styles.bookAuthor}>{book.author}</div>
                   

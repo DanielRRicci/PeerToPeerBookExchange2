@@ -1,5 +1,5 @@
 // server/index.js
-require("dotenv").config();
+require("dotenv").config({ path: '../client/.env' });
 
 const express = require("express");
 const cors = require("cors");
@@ -201,11 +201,11 @@ app.get("/db-test", async (req, res, next) => {
  * );
  */
 
-// GET /listings -> all listings
-app.get("/listings", async (req, res, next) => {
+// GET /BookListings -> all listings
+app.get("/BookListings", async (req, res, next) => {
   try {
     const [rows] = await pool.query(
-      "SELECT * FROM listings ORDER BY created_at DESC"
+      "SELECT * FROM BookListings ORDER BY created_at DESC"
     );
     res.json(rows);
   } catch (err) {
@@ -213,8 +213,8 @@ app.get("/listings", async (req, res, next) => {
   }
 });
 
-// POST /listings -> create listing
-app.post("/listings", async (req, res, next) => {
+// POST /BookListings -> create listing
+app.post("/BookListings", async (req, res, next) => {
   try {
     // 1. Pull all the data out of the incoming request (the 'package')
     const { 
@@ -235,7 +235,7 @@ app.post("/listings", async (req, res, next) => {
 
     // 3. Run the INSERT query to create the new row
     const [result] = await pool.execute(
-      `INSERT INTO listings 
+      `INSERT INTO BookListings 
       (user_id, title, author, isbn, price, course_code, book_condition, status, image_url) 
       VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?)`,
       [
