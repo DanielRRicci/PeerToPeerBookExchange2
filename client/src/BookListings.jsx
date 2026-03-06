@@ -23,7 +23,7 @@ function BookListings() {
   useEffect(() => {
     const fetchListings = async () => {
       try {
-        const response = await fetch("https://peer-to-peer-book-exchange2.vercel.app"); 
+        const response = await fetch("peer-to-peer-book-exchange2.up.railway.app"); 
         if (!response.ok) throw new Error("Failed to fetch listings");
         
         const data = await response.json();
