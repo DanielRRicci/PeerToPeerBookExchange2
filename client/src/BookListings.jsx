@@ -23,7 +23,7 @@ function BookListings() {
   useEffect(() => {
     const fetchListings = async () => {
       try {
-        const response = await fetch("crossover.proxy.rlwy.net:25778"); 
+        const response = await fetch("http://localhost:5000/BookListings"); 
         if (!response.ok) throw new Error("Failed to fetch listings");
         
         const data = await response.json();
