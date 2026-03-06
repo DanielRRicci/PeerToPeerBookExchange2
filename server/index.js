@@ -1,6 +1,5 @@
 // server/index.js
 require("dotenv").config({ path: '../client/.env' });
-
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db"); // <-- db.js should export the MySQL pool
@@ -475,6 +474,67 @@ app.post('/api/login', async (req, res) => {
     return res.status(500).json({ error: error.message || 'Unable to log in right now.' });
   }
 });
+
+// PROFILE ROUTES
+
+app.get('/api/users/:id', async (req, res, next) => {
+  try {
+    const users = await runQuery(
+      'SELECT user_id, full_name, email, profile_image_url, created_at FROM Users WHERE user_id = ? LIMIT 1',
+      [req.params.id]
+    );
+    if (users.length === 0) return res.status(404).json({ error: 'User not found.' });
+    res.json(users[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get('/api/listings', async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: 'userId query param is required.' });
+    const rows = await runQuery(
+      'SELECT * FROM BookListings WHERE user_id = ? ORDER BY created_at DESC',
+      [userId]
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+
+app.put('/api/listings/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { price, condition } = req.body;
+    if (price == null || !condition) return res.status(400).json({ error: 'price and condition are required.' });
+    await runQuery(
+      'UPDATE BookListings SET price = ?, book_condition = ? WHERE listing_id = ?',
+      [price, condition, id]
+    );
+    const updated = await runQuery('SELECT * FROM BookListings WHERE listing_id = ? LIMIT 1', [id]);
+    if (updated.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+    res.json(updated[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/listings/:id', async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await runQuery('DELETE FROM BookListings WHERE listing_id = ?', [id]);
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/*PROFILE ROUTES END*/
+
+
 
 /**
  * Basic error handler (keeps errors readable)
