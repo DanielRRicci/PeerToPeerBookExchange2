@@ -1,42 +1,51 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 function Profile() {
-  // user's info
-  const [user] = useState({
-    fullName: "Pounce Panther",
-    email: "ppanther@uwm.edu",
-    bio: "CS major selling my old books!",
-  });
+  const [user, setUser] = useState(null);
+  const [listings, setListings] = useState([]);
+  const [editingId, setEditingId] = useState(null);
+  const [editData, setEditData] = useState({});
 
-  // user's book listings
-  const [listings] = useState([
-    {
-      id: 1,
-      title: "Discrete Math",
-      author: "C. Cheng",
-      price: "$10",
-      condition: "Good",
-      course: "CS 123",
-    },
-    {
-      id: 2,
-      title: "Computer Architecture",
-      author: "J. Thomas",
-      price: "$30",
-      condition: "Fair",
-      course: "CS 456",
-    },
-    {
-      id: 3,
-      title: "Database Systems",
-      author: "A. Post",
-      price: "$20",
-      condition: "Like New",
-      course: "CS 789",
-    },
-  ]);
+  useEffect(() => {
+    const stored = localStorage.getItem("bookExchangeUser");
+    if (!stored) return;
+    const { id: userId } = JSON.parse(stored);
+    if (!userId) return;
 
-  // colors from Login.js
+    fetch(`/api/users/${userId}`)
+      .then((res) => res.json())
+      .then((data) => setUser(data));
+
+    fetch(`/api/listings?userId=${userId}`)
+      .then((res) => res.json())
+      .then((data) => setListings(Array.isArray(data) ? data : []));
+  }, []);
+
+  function handleDelete(id) {
+    fetch(`/api/listings/${id}`, { method: "DELETE" });
+    setListings(listings.filter((book) => book.listing_id !== id));
+  }
+
+  function handleEdit(book) {
+    setEditingId(book.listing_id);
+    setEditData({ price: book.price, condition: book.book_condition });
+  }
+
+  function handleSave(id) {
+    fetch(`/api/listings/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editData),
+    })
+      .then((res) => res.json())
+      .then((updatedBook) => {
+        setListings(listings.map((book) => (book.listing_id === parseInt(id) ? updatedBook : book)));
+        setEditingId(null);
+      });
+  }
+
+  if (!user) return <p>Loading...</p>;
+
   const colors = {
     gold: "#FFBD00",
     black: "#000000",
@@ -44,7 +53,6 @@ function Profile() {
     darkGray: "#333333",
   };
 
-  // styles from Login.js
   const styles = {
     wrapper: {
       display: "flex",
@@ -62,7 +70,7 @@ function Profile() {
     },
     card: {
       width: "100%",
-      maxWidth: "450px",
+      maxWidth: "520px",
       backgroundColor: colors.white,
       padding: "2.5rem",
       borderRadius: "12px",
@@ -90,28 +98,57 @@ function Profile() {
     },
     instructions: {
       color: "#666",
-      marginBottom: "2rem",
+      marginBottom: "1rem",
       fontSize: "0.95rem",
     },
-    label: {
-      display: "block",
-      fontSize: "0.8rem",
-      fontWeight: "700",
-      marginBottom: "4px",
-      color: colors.darkGray,
-      textTransform: "uppercase",
-    },
     input: {
-      width: "100%",
-      padding: "10px 15px",
+      flex: 1,
+      padding: "8px 10px",
       borderRadius: "6px",
       border: "2px solid #eee",
-      fontSize: "1rem",
+      fontSize: "0.9rem",
       boxSizing: "border-box",
+      minWidth: "60px",
     },
-    inputGroup: {
+    select: {
+      flex: 1,
+      padding: "8px 10px",
+      borderRadius: "6px",
+      border: "2px solid #eee",
+      fontSize: "0.9rem",
+      backgroundColor: colors.white,
+      minWidth: "80px",
+    },
+    listingRow: {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      padding: "10px 12px",
+      borderRadius: "6px",
+      border: "2px solid #eee",
+      fontSize: "0.9rem",
+      marginBottom: "10px",
       textAlign: "left",
-      marginBottom: "1rem",
+      flexWrap: "wrap",
+    },
+    listingText: {
+      flex: 1,
+      color: colors.darkGray,
+    },
+    editRow: {
+      display: "flex",
+      alignItems: "center",
+      gap: "8px",
+      marginBottom: "10px",
+      flexWrap: "wrap",
+    },
+    btn: {
+      padding: "6px 12px",
+      borderRadius: "6px",
+      border: "none",
+      fontWeight: "700",
+      fontSize: "0.8rem",
+      cursor: "pointer",
     },
     footerLink: {
       marginTop: "1.5rem",
@@ -126,42 +163,56 @@ function Profile() {
     },
   };
 
-
-
   return (
     <div style={styles.wrapper}>
       <div style={styles.card}>
-
-        {/* show user's name */}
-        <h1 style={styles.mainHeading}>{user.fullName}</h1>
-
-        {/* show UWM badge */}
+        <h1 style={styles.mainHeading}>{user.full_name}</h1>
         <div style={styles.uwmBadge}>UWM Panther</div>
-
-        {/* show user's email */}
         <p style={styles.instructions}>{user.email}</p>
 
-        {/* show user's bio */}
-        <p style={styles.instructions}>{user.bio}</p>
-
-        {/* show how many books user listed */}
         <h2 style={styles.mainHeading}>My Listings ({listings.length})</h2>
 
-        {/* loop through each book and display it */}
         {listings.map((book) => (
-          <div key={book.id} style={styles.inputGroup}>
-            <label style={styles.label}>{book.title}</label>
-            <div style={styles.input}>
-              {book.author} · {book.course} · {book.condition} · {book.price}
-            </div>
+          <div key={book.listing_id}>
+            {editingId === book.listing_id ? (
+              <div style={styles.editRow}>
+                <span style={{ fontWeight: "700", fontSize: "0.9rem" }}>{book.title}</span>
+                <input
+                  style={styles.input}
+                  value={editData.price}
+                  onChange={(e) => setEditData({ ...editData, price: e.target.value })}
+                  placeholder="Price"
+                />
+                <select
+                  style={styles.select}
+                  value={editData.condition}
+                  onChange={(e) => setEditData({ ...editData, condition: e.target.value })}
+                >
+                  <option>New</option>
+                  <option>Like New</option>
+                  <option>Good</option>
+                  <option>Fair</option>
+                  <option>Poor</option>
+                </select>
+                <button style={{ ...styles.btn, backgroundColor: colors.gold, color: colors.black }} onClick={() => handleSave(book.listing_id)}>Save</button>
+                <button style={{ ...styles.btn, backgroundColor: "#eee", color: colors.darkGray }} onClick={() => setEditingId(null)}>Cancel</button>
+              </div>
+            ) : (
+              <div style={styles.listingRow}>
+                <span style={{ fontWeight: "700" }}>{book.title}</span>
+                <span style={styles.listingText}>
+                  {book.author} · {book.course_code} · {book.book_condition} · ${book.price}
+                </span>
+                <button style={{ ...styles.btn, backgroundColor: colors.gold, color: colors.black }} onClick={() => handleEdit(book)}>Edit</button>
+                <button style={{ ...styles.btn, backgroundColor: "#fff", color: "red", border: "1px solid red" }} onClick={() => handleDelete(book.listing_id)}>Delete</button>
+              </div>
+            )}
           </div>
         ))}
 
-        {/* link back to login page */}
         <div style={styles.footerLink}>
-          <a href="/login" style={styles.link}>← Back to Login</a>
+          <a href="/booklistings" style={styles.link}>← Back to Listings</a>
         </div>
-
       </div>
     </div>
   );
