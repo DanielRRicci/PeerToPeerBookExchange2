@@ -23,7 +23,7 @@ function BookListings() {
   useEffect(() => {
     const fetchListings = async () => {
       try {
-        const response = await fetch("p2p.up.railway.app"); 
+        const response = await fetch("diplomatic-playfulness.up.railway.app"); 
         if (!response.ok) throw new Error("Failed to fetch listings");
         
         const data = await response.json();
