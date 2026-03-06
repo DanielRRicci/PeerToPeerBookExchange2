@@ -1,5 +1,5 @@
 // server/index.js
-require("dotenv").config({ path: "../server/.env" });
+require("dotenv").config({ path: '../client/.env' });
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db"); // <-- db.js should export the MySQL pool
