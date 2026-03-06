@@ -216,27 +216,46 @@ app.get("/listings", async (req, res, next) => {
 // POST /listings -> create listing
 app.post("/listings", async (req, res, next) => {
   try {
-    const { title, author, isbn, condition, price, description, user_id } = req.body;
+    // 1. Pull all the data out of the incoming request (the 'package')
+    const { 
+      user_id, 
+      title, 
+      author, 
+      isbn, 
+      price, 
+      course_code, 
+      book_condition, 
+      image_url 
+    } = req.body;
 
-    if (!title || !author || !condition || price == null || !user_id) {
-      return res.status(400).json({
-        error: "Missing required fields: title, author, condition, price, user_id",
-      });
+    // 2. Double-check that the crucial info isn't missing
+    if (!user_id || !title || !author || !book_condition || price == null) {
+      return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // Check if user exists
-    const [userExists] = await pool.execute("SELECT user_id FROM Users WHERE user_id = ?", [user_id]);
-    if (userExists.length === 0) {
-      return res.status(401).json({ error: "User not registered" });
-    }
-
+    // 3. Run the INSERT query to create the new row
     const [result] = await pool.execute(
-      `INSERT INTO listings (title, author, isbn, \`condition\`, price, description)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [title, author, isbn || null, condition, price, description || null]
+      `INSERT INTO listings 
+      (user_id, title, author, isbn, price, course_code, book_condition, status, image_url) 
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?)`,
+      [
+        user_id, 
+        title, 
+        author, 
+        isbn || null, 
+        price, 
+        course_code || null, 
+        book_condition, 
+        image_url || null
+      ]
     );
 
-    res.status(201).json({ id: result.insertId });
+    // 4. Send back a success message with the new auto-generated listing_id
+    res.status(201).json({ 
+      message: "Book successfully added!",
+      listing_id: result.insertId 
+    });
+
   } catch (err) {
     next(err);
   }
