@@ -7,13 +7,16 @@ import VerifyEmail from "./VerifyEmail.jsx";
 import BookListings from "./BookListings.jsx";
 import PostBook from "./PostBook.jsx";
 import Profile from "./Profile.jsx";
+import Messages from "./Messages.jsx"; // ← NEW
 
-// Wrap content in a component to use useLocation
 function AppContent() {
   const location = useLocation();
 
-  // Hide header and navbar on these pages
-  const hideNav = location.pathname === "/" || location.pathname === "/login" || location.pathname === "/register";
+  const hideNav =
+    location.pathname === "/" ||
+    location.pathname === "/login" ||
+    location.pathname === "/register" ||
+    location.pathname === "/messages"; // ← Messages has its own nav
 
   return (
     <div style={{ padding: 24, fontFamily: "sans-serif" }}>
@@ -27,6 +30,7 @@ function AppContent() {
           <Link to="/booklistings">Listings</Link>
           <Link to="/post">Post</Link>
           <Link to="/profile">Profile</Link>
+          <Link to="/messages">Messages</Link> {/* ← NEW */}
         </div>
       )}
 
@@ -38,6 +42,7 @@ function AppContent() {
         <Route path="/booklistings" element={<BookListings />} />
         <Route path="/post" element={<PostBook />} />
         <Route path="/profile" element={<Profile />} />
+        <Route path="/messages" element={<Messages />} /> {/* ← NEW */}
       </Routes>
     </div>
   );

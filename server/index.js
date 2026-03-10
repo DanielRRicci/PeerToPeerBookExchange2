@@ -2,7 +2,7 @@
 require("dotenv").config({ path: '../client/.env' });
 const express = require("express");
 const cors = require("cors");
-const pool = require("./db"); // <-- db.js should export the MySQL pool
+const pool = require("./db");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
 
@@ -101,7 +101,6 @@ function isValidUwmEmail(email) {
 }
 
 async function ensureSchema() {
-  // create Users table if it does not exist
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Users (
       user_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -134,13 +133,6 @@ async function ensureSchema() {
 
 const app = express();
 
-/**
- * CORS
- * - Local dev: http://localhost:5173 (Vite)
- * - Production: your Vercel domain
- *
- * If you want this more flexible, set CLIENT_ORIGIN in Railway.
- */
 const allowedOrigins = [
   "http://localhost:5173",
   "http://127.0.0.1:5173",
@@ -151,11 +143,8 @@ const allowedOrigins = [
 app.use(
   cors({
     origin: (origin, cb) => {
-      // allow requests with no origin (curl, server-to-server, etc.)
       if (!origin) return cb(null, true);
-
       if (allowedOrigins.includes(origin)) return cb(null, true);
-
       return cb(new Error(`CORS blocked for origin: ${origin}`));
     },
     credentials: true,
@@ -164,97 +153,72 @@ app.use(
 
 app.use(express.json());
 
-/**
- * HEALTH & DB CHECKS
- */
 app.get("/health", (req, res) => {
   res.json({ ok: true, message: "API running" });
 });
 
-/**
- * DB sanity check (temporary but very useful)
- * Confirms Railway -> MySQL connection works.
- */
 app.get("/db-test", async (req, res, next) => {
   try {
     const [rows] = await pool.query("SELECT 1 AS ok");
-    res.json(rows[0]); // { ok: 1 }
+    res.json(rows[0]);
   } catch (err) {
     next(err);
   }
 });
 
-/**
- * LISTINGS
- * Minimal schema expected:
- *
- * CREATE TABLE listings (
- *   id INT AUTO_INCREMENT PRIMARY KEY,
- *   title VARCHAR(255) NOT NULL,
- *   author VARCHAR(255) NOT NULL,
- *   isbn VARCHAR(32),
- *   `condition` VARCHAR(64) NOT NULL,
- *   price DECIMAL(10,2) NOT NULL,
- *   description TEXT,
- *   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
- * );
- */
-
-// GET /BookListings -> all listings
+// GET /BookListings — includes seller_name for Contact Seller feature
 app.get("/BookListings", async (req, res, next) => {
   try {
-    const [rows] = await pool.query(
-      "SELECT * FROM BookListings ORDER BY created_at DESC"
-    );
+    const [rows] = await pool.query(`
+      SELECT bl.*, u.full_name AS seller_name
+      FROM BookListings bl
+      JOIN Users u ON u.user_id = bl.user_id
+      ORDER BY bl.created_at DESC
+    `);
     res.json(rows);
   } catch (err) {
     next(err);
   }
 });
 
-// POST /BookListings -> create listing
+// POST /BookListings
 app.post("/BookListings", async (req, res, next) => {
   try {
-    // 1. Pull all the data out of the incoming request (the 'package')
-    const { 
-      user_id, 
-      title, 
-      author, 
-      isbn, 
-      price, 
-      course_code, 
-      book_condition, 
-      image_url 
+    const {
+      user_id,
+      title,
+      author,
+      isbn,
+      price,
+      course_code,
+      book_condition,
+      image_url
     } = req.body;
 
-    // 2. Double-check that the crucial info isn't missing
     if (!user_id || !title || !author || !book_condition || price == null) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    // 3. Run the INSERT query to create the new row
     const [result] = await pool.execute(
       `INSERT INTO BookListings 
       (user_id, title, author, isbn, price, course_code, book_condition, status, image_url) 
       VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?)`,
       [
-        user_id, 
-        title, 
-        author, 
-        isbn || null, 
-        price, 
-        course_code || null, 
-        book_condition, 
+        user_id,
+        title,
+        author,
+        isbn || null,
+        price,
+        course_code || null,
+        book_condition,
         image_url || null
       ]
     );
 
-    // 4. Send back a success message with the new auto-generated listing_id
-    res.status(201).json({ 
+    res.status(201).json({
       message: "Book successfully added!",
-      listing_id: result.insertId 
+      listing_id: result.insertId
     });
-
   } catch (err) {
     next(err);
   }
@@ -504,7 +468,6 @@ app.get('/api/listings', async (req, res, next) => {
   }
 });
 
-
 app.put('/api/listings/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
@@ -534,23 +497,171 @@ app.delete('/api/listings/:id', async (req, res, next) => {
 
 /*PROFILE ROUTES END*/
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MESSAGING ROUTES
+// ─────────────────────────────────────────────────────────────────────────────
 
+// GET /api/messages/conversations
+app.get("/api/messages/conversations", async (req, res, next) => {
+  try {
+    const userId = parseInt(req.query.userId, 10);
+    if (!userId) return res.status(400).json({ error: "userId is required." });
 
-/**
- * Basic error handler (keeps errors readable)
- */
+    // Step 1: Get all distinct (other_user, listing) pairs this user is part of
+    const pairs = await runQuery(
+      `SELECT DISTINCT
+         IF(sender_id = ?, receiver_id, sender_id) AS other_user_id,
+         listing_id
+       FROM Messages
+       WHERE sender_id = ? OR receiver_id = ?`,
+      [userId, userId, userId]
+    );
+
+    if (pairs.length === 0) {
+      return res.json([]);
+    }
+
+    // Step 2: For each pair, get the last message, user name, book title, unread count
+    const conversations = await Promise.all(
+      pairs.map(async ({ other_user_id, listing_id }) => {
+        const [lastMsg] = await runQuery(
+          `SELECT content, sent_at FROM Messages
+           WHERE listing_id = ?
+             AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+           ORDER BY sent_at DESC LIMIT 1`,
+          [listing_id, userId, other_user_id, other_user_id, userId]
+        );
+
+        const [otherUser] = await runQuery(
+          `SELECT full_name FROM Users WHERE user_id = ?`,
+          [other_user_id]
+        );
+
+        const [book] = await runQuery(
+          `SELECT title FROM BookListings WHERE listing_id = ?`,
+          [listing_id]
+        );
+
+        const [unreadRow] = await runQuery(
+          `SELECT COUNT(*) AS unread_count FROM Messages
+           WHERE listing_id = ?
+             AND sender_id = ?
+             AND receiver_id = ?
+             AND is_read = FALSE`,
+          [listing_id, other_user_id, userId]
+        );
+
+        return {
+          other_user_id,
+          other_user_name: otherUser?.full_name || "Unknown",
+          listing_id,
+          book_title: book?.title || "Unknown Book",
+          last_message: lastMsg?.content || "",
+          last_sent_at: lastMsg?.sent_at || null,
+          unread_count: unreadRow?.unread_count || 0,
+        };
+      })
+    );
+
+    // Sort by most recent message
+    conversations.sort((a, b) => new Date(b.last_sent_at) - new Date(a.last_sent_at));
+
+    res.json(conversations);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/messages
+app.get("/api/messages", async (req, res, next) => {
+  try {
+    const { userId, otherUserId, listingId } = req.query;
+    if (!userId || !otherUserId || !listingId) {
+      return res.status(400).json({ error: "userId, otherUserId, and listingId are required." });
+    }
+
+    const rows = await runQuery(
+      `SELECT message_id, sender_id, receiver_id, listing_id, content, is_read, sent_at
+       FROM Messages
+       WHERE listing_id = ?
+         AND (
+               (sender_id = ? AND receiver_id = ?)
+            OR (sender_id = ? AND receiver_id = ?)
+         )
+       ORDER BY sent_at ASC`,
+      [listingId, userId, otherUserId, otherUserId, userId]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /api/messages
+app.post("/api/messages", async (req, res, next) => {
+  try {
+    const { senderId, receiverId, listingId, content } = req.body;
+
+    if (!senderId || !receiverId || !listingId || !content?.trim()) {
+      return res.status(400).json({ error: "senderId, receiverId, listingId, and content are required." });
+    }
+
+    const result = await runQuery(
+      `INSERT INTO Messages (sender_id, receiver_id, listing_id, content, is_read)
+       VALUES (?, ?, ?, ?, FALSE)`,
+      [senderId, receiverId, listingId, content.trim()]
+    );
+
+    const [newMessage] = await runQuery(
+      "SELECT * FROM Messages WHERE message_id = ?",
+      [result.insertId]
+    );
+
+    res.status(201).json(newMessage);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// PUT /api/messages/read
+app.put("/api/messages/read", async (req, res, next) => {
+  try {
+    const { userId, otherUserId, listingId } = req.body;
+
+    if (!userId || !otherUserId || !listingId) {
+      return res.status(400).json({ error: "userId, otherUserId, and listingId are required." });
+    }
+
+    await runQuery(
+      `UPDATE Messages
+       SET is_read = TRUE
+       WHERE receiver_id = ?
+         AND sender_id   = ?
+         AND listing_id  = ?
+         AND is_read     = FALSE`,
+      [userId, otherUserId, listingId]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// END MESSAGING ROUTES
+// ─────────────────────────────────────────────────────────────────────────────
+
+// Error handler
 app.use((err, req, res, next) => {
   console.error(err);
-
-  // CORS errors show up here too
   if (String(err.message || "").startsWith("CORS blocked")) {
     return res.status(403).json({ error: err.message });
   }
-
   res.status(500).json({ error: "Server error" });
 });
 
-// make sure we can connect & initialize schema
 pool.getConnection()
   .then((conn) => {
     console.log('Successfully connected to the database');
