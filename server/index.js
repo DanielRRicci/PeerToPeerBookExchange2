@@ -439,6 +439,12 @@ app.post('/api/login', async (req, res) => {
   }
 });
 
+app.post('/api/logout', async (_req, res) => {
+  return res.status(200).json({
+    message: 'Logout successful.',
+  });
+});
+
 // PROFILE ROUTES
 
 app.get('/api/users/:id', async (req, res, next) => {
