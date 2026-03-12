@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { getApiBaseUrl } from "./apiBaseUrl";
+import { clearStoredUser, getStoredUser } from "./auth";
 
 function BookListings() {
   const navigate = useNavigate();
@@ -10,6 +12,7 @@ function BookListings() {
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("All");
   const [sortOrder, setSortOrder] = useState("");
+  const currentUser = getStoredUser();
 
   const colors = {
     gold: "#FFBD00",
@@ -85,12 +88,18 @@ function BookListings() {
       display: "flex",
       gap: "16px",
       alignItems: "center",
+      flexWrap: "wrap",
     },
     navLink: {
       color: colors.white,
       fontWeight: "600",
       cursor: "pointer",
       textDecoration: "none",
+      fontSize: "0.9rem",
+    },
+    userInfo: {
+      color: colors.white,
+      fontWeight: "600",
       fontSize: "0.9rem",
     },
     container: {
@@ -242,19 +251,43 @@ function BookListings() {
     });
   }
 
+  async function handleLogout() {
+    try {
+      const baseUrl = getApiBaseUrl();
+      await fetch(`${baseUrl}/api/logout`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser?.id ?? null }),
+      });
+    } catch (_error) {
+      // Clear local auth even if the API call fails.
+    }
+
+    clearStoredUser();
+    navigate("/login");
+  }
+
+  const displayName =
+    currentUser?.username ||
+    currentUser?.fullName ||
+    (currentUser?.email ? currentUser.email.split("@")[0] : null);
+
   return (
     <div style={styles.wrapper}>
       {/* Navigation */}
       <nav style={styles.navbar}>
         <div style={styles.logo}>UWM Exchange</div>
         <div style={styles.navLinks}>
+          <span style={styles.userInfo}>
+            {displayName ? `Logged in as ${displayName}` : "Not logged in"}
+          </span>
           <span style={styles.navLink} onClick={() => navigate("/messages")}>
             💬 Messages
           </span>
           <span style={styles.navLink} onClick={() => navigate("/profile")}>
             Profile
           </span>
-          <span style={styles.navLink} onClick={() => navigate("/login")}>
+          <span style={styles.navLink} onClick={handleLogout}>
             Logout
           </span>
         </div>
