@@ -72,10 +72,17 @@ function BookListings() {
       backgroundColor: colors.black,
       padding: "1rem 2rem",
       display: "flex",
-      justifyContent: "flex-end",
+      justifyContent: "space-between",
       alignItems: "center",
       borderBottom: `4px solid ${colors.gold}`,
       boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+    },
+    logo: {
+      color: colors.gold,
+      fontSize: "1.5rem",
+      fontWeight: "800",
+      letterSpacing: "1px",
+      textTransform: "uppercase",
     },
     navLinks: {
       display: "flex",
@@ -277,6 +284,7 @@ function BookListings() {
     <div style={styles.wrapper}>
       {/* Navigation */}
       <nav style={styles.navbar}>
+        <div style={styles.logo}>UWM Exchange</div>
         <div style={styles.navLinks}>
           <span style={styles.userInfo}>
             {displayName ? `Logged in as ${displayName}` : "Not logged in"}
