@@ -57,7 +57,15 @@ function AppContent() {
     (currentUser?.email ? currentUser.email.split("@")[0] : null);
 
   return (
-    <div style={{ padding: 24, fontFamily: "sans-serif" }}>
+    <div
+      style={{
+        margin: 0,
+        padding: 0,
+        width: "100%",
+        minHeight: "100vh",
+        fontFamily: "sans-serif",
+      }}
+    >
       {!hideNav && <h1>Peer-to-Peer Book Exchange</h1>}
 
       {!hideNav && (
