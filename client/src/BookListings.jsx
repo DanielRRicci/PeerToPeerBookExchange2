@@ -12,6 +12,7 @@ function BookListings() {
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("All");
   const [sortOrder, setSortOrder] = useState("");
+  const [hoveredNavLink, setHoveredNavLink] = useState(null);
   const currentUser = getStoredUser();
 
   const colors = {
@@ -89,6 +90,9 @@ function BookListings() {
       cursor: "pointer",
       textDecoration: "none",
       fontSize: "0.9rem",
+      display: "inline-flex",
+      alignItems: "center",
+      transition: "transform 0.18s ease",
     },
     userInfo: {
       color: colors.white,
@@ -265,6 +269,11 @@ function BookListings() {
     currentUser?.fullName ||
     (currentUser?.email ? currentUser.email.split("@")[0] : null);
 
+  const getNavLinkStyle = (id) => ({
+    ...styles.navLink,
+    transform: hoveredNavLink === id ? "scale(1.08)" : "scale(1)",
+  });
+
   return (
     <div style={styles.wrapper}>
       {/* Navigation */}
@@ -273,13 +282,28 @@ function BookListings() {
           <span style={styles.userInfo}>
             {displayName ? `Logged in as ${displayName}` : "Not logged in"}
           </span>
-          <span style={styles.navLink} onClick={() => navigate("/messages")}>
+          <span
+            style={getNavLinkStyle("messages")}
+            onClick={() => navigate("/messages")}
+            onMouseEnter={() => setHoveredNavLink("messages")}
+            onMouseLeave={() => setHoveredNavLink(null)}
+          >
             💬 Messages
           </span>
-          <span style={styles.navLink} onClick={() => navigate("/profile")}>
+          <span
+            style={getNavLinkStyle("profile")}
+            onClick={() => navigate("/profile")}
+            onMouseEnter={() => setHoveredNavLink("profile")}
+            onMouseLeave={() => setHoveredNavLink(null)}
+          >
             Profile
           </span>
-          <span style={styles.navLink} onClick={handleLogout}>
+          <span
+            style={getNavLinkStyle("logout")}
+            onClick={handleLogout}
+            onMouseEnter={() => setHoveredNavLink("logout")}
+            onMouseLeave={() => setHoveredNavLink(null)}
+          >
             Logout
           </span>
         </div>
