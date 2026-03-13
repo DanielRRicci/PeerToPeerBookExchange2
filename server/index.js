@@ -1,6 +1,5 @@
 // server/index.js
 require("dotenv").config({ path: __dirname + '/.env' });
-console.log("Loaded R2_BUCKET_NAME:", process.env.R2_BUCKET_NAME);
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
