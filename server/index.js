@@ -525,8 +525,11 @@ app.get("/api/upload-url", async (req, res, next) => {
   ChecksumAlgorithm: undefined,
 });
  
-    const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
-    const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+const uploadUrl = await getSignedUrl(r2Client, command, { 
+  expiresIn: 900,
+  unhoistableHeaders: new Set(["x-amz-checksum-crc32"]),
+});
+const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
  
     res.json({ uploadUrl, publicUrl });
   } catch (err) {
