@@ -9,6 +9,9 @@ const nodemailer = require("nodemailer");
 const BOOT_MARKER = new Date().toISOString();
 const VERIFICATION_CODE_TTL_MINUTES = 15;
 
+const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
+const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+
 function runQuery(sql, params = []) {
   return pool.query(sql, params).then(([rows]) => rows);
 }
@@ -130,6 +133,15 @@ async function ensureSchema() {
     }
   }
 }
+
+const r2Client = new S3Client({
+  region: "auto",
+  endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+  credentials: {
+    accessKeyId: process.env.R2_ACCESS_KEY_ID,
+    secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
+  },
+});
 
 const app = express();
 
@@ -490,6 +502,46 @@ app.delete('/api/listings/:id', async (req, res, next) => {
     const { id } = req.params;
     await runQuery('DELETE FROM BookListings WHERE listing_id = ?', [id]);
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/upload-url", async (req, res, next) => {
+  try {
+    const { filename, contentType } = req.query;
+    if (!filename || !contentType) {
+      return res.status(400).json({ error: "filename and contentType are required." });
+    }
+ 
+    const key = `Profile_Pic/${Date.now()}-${filename}`;
+ 
+    const command = new PutObjectCommand({
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      ContentType: contentType,
+    });
+ 
+    const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
+    const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
+ 
+    res.json({ uploadUrl, publicUrl });
+  } catch (err) {
+    next(err);
+  }
+});
+ 
+app.put("/api/users/:id/avatar", async (req, res, next) => {
+  try {
+    const { avatarUrl } = req.body;
+    if (!avatarUrl) return res.status(400).json({ error: "avatarUrl is required." });
+ 
+    await runQuery(
+      "UPDATE Users SET profile_image_url = ? WHERE user_id = ?",
+      [avatarUrl, req.params.id]
+    );
+ 
+    res.json({ success: true, profile_image_url: avatarUrl });
   } catch (err) {
     next(err);
   }
