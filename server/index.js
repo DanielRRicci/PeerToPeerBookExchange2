@@ -141,6 +141,8 @@ const r2Client = new S3Client({
     accessKeyId: process.env.R2_ACCESS_KEY_ID,
     secretAccessKey: process.env.R2_SECRET_ACCESS_KEY,
   },
+  requestChecksumCalculation: "WHEN_REQUIRED",
+  responseChecksumValidation: "WHEN_REQUIRED",
 });
 
 const app = express();
@@ -517,10 +519,11 @@ app.get("/api/upload-url", async (req, res, next) => {
     const key = `Profile_Pic/${Date.now()}-${filename}`;
  
     const command = new PutObjectCommand({
-      Bucket: process.env.R2_BUCKET_NAME,
-      Key: key,
-      ContentType: contentType,
-    });
+  Bucket: process.env.R2_BUCKET_NAME,
+  Key: key,
+  ContentType: contentType,
+  ChecksumAlgorithm: undefined,
+});
  
     const uploadUrl = await getSignedUrl(r2Client, command, { expiresIn: 900 });
     const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
