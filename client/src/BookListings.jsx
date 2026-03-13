@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { getApiBaseUrl } from "./apiBaseUrl";
 
 function BookListings() {
   const navigate = useNavigate();
@@ -22,8 +23,7 @@ function BookListings() {
   useEffect(() => {
     const fetchListings = async () => {
       try {
-        const response = await fetch("http://localhost:5000/BookListings");
-        if (!response.ok) throw new Error("Failed to fetch listings");
+    const response = await fetch(`${getApiBaseUrl()}/BookListings`);        if (!response.ok) throw new Error("Failed to fetch listings");
         const data = await response.json();
         setBooks(data);
       } catch (error) {
