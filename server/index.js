@@ -1,5 +1,6 @@
 // server/index.js
 require("dotenv").config({ path: __dirname + '/.env' });
+console.log("Loaded R2_BUCKET_NAME:", process.env.R2_BUCKET_NAME);
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
@@ -11,6 +12,7 @@ const VERIFICATION_CODE_TTL_MINUTES = 15;
 
 const { S3Client, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { getSignedUrl } = require("@aws-sdk/s3-request-presigner");
+const multer = require("multer");
 
 function runQuery(sql, params = []) {
   return pool.query(sql, params).then(([rows]) => rows);
@@ -132,34 +134,6 @@ async function ensureSchema() {
       if (error.code !== 'ER_DUP_FIELDNAME') throw error;
     }
   }
-
-  await runQuery(`
-    ALTER TABLE listing_images
-    MODIFY COLUMN uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-  `);
-
-  try {
-    await runQuery(`
-      ALTER TABLE listing_images
-      ADD CONSTRAINT uq_listing_images_listing_order
-      UNIQUE (listing_id, order_number)
-    `);
-  } catch (error) {
-    if (error.code !== "ER_DUP_KEYNAME" && error.code !== "ER_DUP_ENTRY") throw error;
-  }
-
-  try {
-    await runQuery(`
-      ALTER TABLE listing_images
-      ADD CONSTRAINT fk_listing_images_listing
-      FOREIGN KEY (listing_id)
-      REFERENCES BookListings(listing_id)
-      ON DELETE CASCADE
-      ON UPDATE CASCADE
-    `);
-  } catch (error) {
-    if (error.code !== "ER_DUP_KEYNAME" && error.code !== "ER_CANT_CREATE_TABLE") throw error;
-  }
 }
 
 const r2Client = new S3Client({
@@ -172,6 +146,52 @@ const r2Client = new S3Client({
   requestChecksumCalculation: "WHEN_REQUIRED",
   responseChecksumValidation: "WHEN_REQUIRED",
 });
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    files: 6,
+    fileSize: 10 * 1024 * 1024, // 10 MB per image
+  },
+  fileFilter: (_req, file, cb) => {
+    const allowed = [
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+      "image/gif",
+    ];
+
+    if (!allowed.includes(file.mimetype)) {
+      return cb(new Error("Only JPG, PNG, WEBP, and GIF images are allowed."));
+    }
+
+    cb(null, true);
+  },
+});
+
+function getImageExtension(mimetype) {
+  switch (mimetype) {
+    case "image/jpeg":
+      return ".jpg";
+    case "image/png":
+      return ".png";
+    case "image/webp":
+      return ".webp";
+    case "image/gif":
+      return ".gif";
+    default:
+      return "";
+  }
+}
+
+function buildPostImageKey(listingId, orderNumber, mimetype) {
+  return `Post_Pic/${listingId}/${orderNumber}${getImageExtension(mimetype)}`;
+}
+
+function buildPublicImageUrl(objectKey) {
+  const base = String(process.env.R2_PUBLIC_URL || "").replace(/\/$/, "");
+  return `${base}/${objectKey}`;
+}
 
 const app = express();
 
@@ -230,36 +250,53 @@ app.post("/BookListings", async (req, res, next) => {
       user_id,
       title,
       author,
+      edition,
       isbn,
       price,
       course_code,
       book_condition,
-      image_url
+      notes,
+      image_url,
     } = req.body;
 
     if (!user_id || !title || !author || !book_condition || price == null) {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
+    const cleanedTitle = String(title).trim();
+    const cleanedAuthor = String(author).trim();
+    const cleanedEdition = edition ? String(edition).trim() : null;
+    const cleanedIsbn = isbn ? String(isbn).trim() : null;
+    const cleanedCourseCode = course_code ? String(course_code).trim() : null;
+    const cleanedCondition = String(book_condition).trim();
+    const cleanedNotes = notes ? String(notes).trim() : null;
+    const numericPrice = Number(price);
+
+    if (Number.isNaN(numericPrice) || numericPrice < 0) {
+      return res.status(400).json({ error: "Price must be a valid non-negative number." });
+    }
+
     const [result] = await pool.execute(
-      `INSERT INTO BookListings 
-      (user_id, title, author, isbn, price, course_code, book_condition, status, image_url) 
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'available', ?)`,
+      `INSERT INTO BookListings
+      (user_id, title, author, \`Edition\`, isbn, price, course_code, book_condition, notes, status, image_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)`,
       [
         user_id,
-        title,
-        author,
-        isbn || null,
-        price,
-        course_code || null,
-        book_condition,
-        image_url || null
+        cleanedTitle,
+        cleanedAuthor,
+        cleanedEdition,
+        cleanedIsbn,
+        numericPrice,
+        cleanedCourseCode,
+        cleanedCondition,
+        cleanedNotes,
+        image_url || null,
       ]
     );
 
     res.status(201).json({
       message: "Book successfully added!",
-      listing_id: result.insertId
+      listing_id: result.insertId,
     });
   } catch (err) {
     next(err);
@@ -538,6 +575,108 @@ app.delete('/api/listings/:id', async (req, res, next) => {
     const { id } = req.params;
     await runQuery('DELETE FROM BookListings WHERE listing_id = ?', [id]);
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/images", upload.array("images", 6), async (req, res, next) => {
+  try {
+    const { prefix, listingId } = req.body;
+
+    if (prefix !== "Post_Pic") {
+      return res.status(400).json({ error: "Only Post_Pic uploads are supported here." });
+    }
+
+    const numericListingId = Number(listingId);
+    if (!Number.isInteger(numericListingId) || numericListingId <= 0) {
+      return res.status(400).json({ error: "A valid listingId is required." });
+    }
+
+    if (!req.files || req.files.length === 0) {
+      return res.status(400).json({ error: "No images were uploaded." });
+    }
+
+    const existingListing = await runQuery(
+      "SELECT listing_id FROM BookListings WHERE listing_id = ? LIMIT 1",
+      [numericListingId]
+    );
+
+    if (existingListing.length === 0) {
+      return res.status(404).json({ error: "Listing not found." });
+    }
+
+    const countRows = await runQuery(
+      "SELECT COUNT(*) AS count FROM listing_images WHERE listing_id = ?",
+      [numericListingId]
+    );
+
+    const existingCount = Number(countRows[0]?.count || 0);
+
+    if (existingCount + req.files.length > 6) {
+      return res.status(400).json({ error: "A listing can have at most 6 images." });
+    }
+
+    const uploadedImages = [];
+
+    for (let i = 0; i < req.files.length; i++) {
+      const file = req.files[i];
+      const orderNumber = existingCount + i + 1;
+
+      const objectKey = buildPostImageKey(
+        numericListingId,
+        orderNumber,
+        file.mimetype
+      );
+
+      const bucketName = process.env.R2_BUCKET_NAME || process.env.R2_BUCKET;
+
+      if (!bucketName) {
+        return res.status(500).json({
+          error: "Missing R2 bucket environment variable (R2_BUCKET_NAME or R2_BUCKET).",
+        });
+      }
+
+      await r2Client.send(
+        new PutObjectCommand({
+          Bucket: bucketName,
+          Key: objectKey,
+          Body: file.buffer,
+          ContentType: file.mimetype,
+        })
+      );
+
+      const insertResult = await runQuery(
+        `INSERT INTO listing_images
+         (listing_id, order_number, object_key, file_type, uploaded_at)
+         VALUES (?, ?, ?, ?, NOW())`,
+        [numericListingId, orderNumber, objectKey, file.mimetype]
+      );
+
+      const publicUrl = buildPublicImageUrl(objectKey);
+
+      // Save the first image as the listing cover image
+      if (orderNumber === 1) {
+        await runQuery(
+          "UPDATE BookListings SET image_url = ? WHERE listing_id = ?",
+          [publicUrl, numericListingId]
+        );
+      }
+
+      uploadedImages.push({
+        id: insertResult.insertId,
+        listing_id: numericListingId,
+        order_number: orderNumber,
+        object_key: objectKey,
+        file_type: file.mimetype,
+        image_url: publicUrl,
+      });
+    }
+
+    res.status(201).json({
+      message: "Images uploaded successfully.",
+      images: uploadedImages,
+    });
   } catch (err) {
     next(err);
   }
