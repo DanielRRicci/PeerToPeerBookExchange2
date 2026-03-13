@@ -4,6 +4,7 @@ import {
   BrowserRouter as Router,
   Routes,
   Route,
+  useLocation,
 } from "react-router-dom";
 
 import Login from "./Login.jsx";
@@ -13,15 +14,24 @@ import BookListings from "./BookListings.jsx";
 import PostBook from "./PostBook.jsx";
 import Profile from "./Profile.jsx";
 import Messages from "./Messages.jsx";
+import TopNav from "./TopNav.jsx";
 import { getStoredUser, subscribeToAuthChanges } from "./auth";
 
 function AppContent() {
   const [, setCurrentUser] = useState(() => getStoredUser());
+  const location = useLocation();
 
   useEffect(() => {
     const syncUser = () => setCurrentUser(getStoredUser());
     return subscribeToAuthChanges(syncUser);
   }, []);
+
+  const showTopNav = [
+    "/booklistings",
+    "/post",
+    "/profile",
+    "/messages",
+  ].includes(location.pathname);
 
   return (
     <div
@@ -33,6 +43,8 @@ function AppContent() {
         fontFamily: "sans-serif",
       }}
     >
+      {showTopNav && <TopNav />}
+
       <Routes>
         <Route path="/" element={<Login />} />
         <Route path="/login" element={<Login />} />

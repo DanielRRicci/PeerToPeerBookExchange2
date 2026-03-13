@@ -106,7 +106,7 @@ function Profile() {
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
-      minHeight: "100vh",
+      minHeight: "calc(100vh - 76px)",
       width: "100vw",
       margin: 0,
       padding: "20px",

@@ -36,7 +36,7 @@ function formatTime(ts) {
 const styles = {
   wrapper: {
     display: "flex",
-    height: "100vh",
+    height: "calc(100vh - 76px)",
     width: "100vw",
     overflow: "hidden",
     fontFamily: "'Inter', 'Segoe UI', Roboto, sans-serif",
@@ -438,9 +438,9 @@ export default function Messages() {
       <aside style={styles.sidebar}>
         <div style={styles.sidebarHeader}>
           <span>Messages</span>
-          <button style={styles.backBtn} onClick={() => navigate("/booklistings")}>
+          {/* <button style={styles.backBtn} onClick={() => navigate("/booklistings")}>
             ← Listings
-          </button>
+          </button> */}
         </div>
 
         {loading ? (

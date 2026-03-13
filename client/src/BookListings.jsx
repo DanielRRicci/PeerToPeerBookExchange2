@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApiBaseUrl } from "./apiBaseUrl";
-import { clearStoredUser, getStoredUser } from "./auth";
 
 function BookListings() {
   const navigate = useNavigate();
@@ -12,8 +11,6 @@ function BookListings() {
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("All");
   const [sortOrder, setSortOrder] = useState("");
-  const [hoveredNavLink, setHoveredNavLink] = useState(null);
-  const currentUser = getStoredUser();
 
   const colors = {
     gold: "#FFBD00",
@@ -26,7 +23,9 @@ function BookListings() {
   useEffect(() => {
     const fetchListings = async () => {
       try {
-    const response = await fetch(`${getApiBaseUrl()}/BookListings`);        if (!response.ok) throw new Error("Failed to fetch listings");
+        const response = await fetch(`${getApiBaseUrl()}/BookListings`);
+        if (!response.ok) throw new Error("Failed to fetch listings");
+
         const data = await response.json();
         setBooks(data);
       } catch (error) {
@@ -35,16 +34,20 @@ function BookListings() {
         setLoading(false);
       }
     };
+
     fetchListings();
   }, []);
 
   let processedBooks = books.filter((book) => {
     const title = book.title || "";
     const course = book.course_code || "";
+
     const matchesSearch =
       title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       course.toLowerCase().includes(searchTerm.toLowerCase());
+
     const matchesCategory = category === "All" || course.includes(category);
+
     return matchesSearch && matchesCategory;
   });
 
@@ -56,7 +59,7 @@ function BookListings() {
 
   const styles = {
     wrapper: {
-      minHeight: "100vh",
+      minHeight: "calc(100vh - 76px)",
       width: "100vw",
       margin: 0,
       fontFamily: "'Inter', 'Segoe UI', Roboto, sans-serif",
@@ -68,43 +71,6 @@ function BookListings() {
       display: "flex",
       flexDirection: "column",
     },
-    navbar: {
-      backgroundColor: colors.black,
-      padding: "1rem 2rem",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      borderBottom: `4px solid ${colors.gold}`,
-      boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
-    },
-    logo: {
-      color: colors.gold,
-      fontSize: "1.5rem",
-      fontWeight: "800",
-      letterSpacing: "1px",
-      textTransform: "uppercase",
-    },
-    navLinks: {
-      display: "flex",
-      gap: "16px",
-      alignItems: "center",
-      flexWrap: "wrap",
-    },
-    navLink: {
-      color: colors.white,
-      fontWeight: "600",
-      cursor: "pointer",
-      textDecoration: "none",
-      fontSize: "0.9rem",
-      display: "inline-flex",
-      alignItems: "center",
-      transition: "transform 0.18s ease",
-    },
-    userInfo: {
-      color: colors.white,
-      fontWeight: "600",
-      fontSize: "0.9rem",
-    },
     container: {
       display: "flex",
       flexWrap: "wrap",
@@ -113,6 +79,7 @@ function BookListings() {
       margin: "0 auto",
       width: "100%",
       gap: "2rem",
+      boxSizing: "border-box",
     },
     sidebar: {
       flex: "1 1 250px",
@@ -239,9 +206,9 @@ function BookListings() {
   };
 
   function handleContact(book) {
-    // Get the logged-in user so we don't show Contact on our own listings
     const stored = localStorage.getItem("bookExchangeUser");
     const currentUser = stored ? JSON.parse(stored) : null;
+
     if (currentUser && currentUser.id === book.user_id) return;
 
     navigate("/messages", {
@@ -254,70 +221,9 @@ function BookListings() {
     });
   }
 
-  async function handleLogout() {
-    try {
-      const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/logout`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: currentUser?.id ?? null }),
-      });
-    } catch (_error) {
-      // Clear local auth even if the API call fails.
-    }
-
-    clearStoredUser();
-    navigate("/login");
-  }
-
-  const displayName =
-    currentUser?.username ||
-    currentUser?.fullName ||
-    (currentUser?.email ? currentUser.email.split("@")[0] : null);
-
-  const getNavLinkStyle = (id) => ({
-    ...styles.navLink,
-    transform: hoveredNavLink === id ? "scale(1.08)" : "scale(1)",
-  });
-
   return (
     <div style={styles.wrapper}>
-      {/* Navigation */}
-      <nav style={styles.navbar}>
-        <div style={styles.logo}>UWM Exchange</div>
-        <div style={styles.navLinks}>
-          <span style={styles.userInfo}>
-            {displayName ? `Logged in as ${displayName}` : "Not logged in"}
-          </span>
-          <span
-            style={getNavLinkStyle("messages")}
-            onClick={() => navigate("/messages")}
-            onMouseEnter={() => setHoveredNavLink("messages")}
-            onMouseLeave={() => setHoveredNavLink(null)}
-          >
-            💬 Messages
-          </span>
-          <span
-            style={getNavLinkStyle("profile")}
-            onClick={() => navigate("/profile")}
-            onMouseEnter={() => setHoveredNavLink("profile")}
-            onMouseLeave={() => setHoveredNavLink(null)}
-          >
-            Profile
-          </span>
-          <span
-            style={getNavLinkStyle("logout")}
-            onClick={handleLogout}
-            onMouseEnter={() => setHoveredNavLink("logout")}
-            onMouseLeave={() => setHoveredNavLink(null)}
-          >
-            Logout
-          </span>
-        </div>
-      </nav>
-
       <div style={styles.container}>
-        {/* Sidebar Filter */}
         <aside style={styles.sidebar}>
           <div style={styles.sidebarTitle}>Filters</div>
 
@@ -361,7 +267,6 @@ function BookListings() {
           </select>
         </aside>
 
-        {/* Book Grid */}
         <main style={styles.grid}>
           {loading ? (
             <div
@@ -398,15 +303,18 @@ function BookListings() {
                     alt={book.title}
                     style={styles.cardImage}
                   />
+
                   <div style={styles.cardContent}>
                     <div style={styles.courseBadge}>
                       {book.course_code || "General"}
                     </div>
+
                     <div style={styles.bookTitle}>{book.title}</div>
                     <div style={styles.bookAuthor}>{book.author}</div>
 
                     <div style={styles.cardFooter}>
                       <div style={styles.price}>${book.price}</div>
+
                       <div style={styles.buttonGroup}>
                         <button style={styles.buyButton}>Details</button>
                         {!isOwnListing && (

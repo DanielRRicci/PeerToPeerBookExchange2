@@ -31,7 +31,7 @@ function PostBook() {
       display: "flex",
       justifyContent: "center",
       alignItems: "center",
-      minHeight: "100vh",
+      minHeight: "calc(100vh - 76px)",
       width: "100vw",
       margin: 0,
       padding: "20px",
@@ -159,7 +159,7 @@ function PostBook() {
           </div>
 
           <div style={styles.inputGroup}>
-            <label style={styles.label}>Photo (optional)</label>
+            <label style={styles.label}>Photo(s)</label>
             <input
               type="file"
               accept="image/*"
