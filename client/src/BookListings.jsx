@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { getApiBaseUrl } from "./apiBaseUrl";
 import { clearStoredUser, getStoredUser } from "./auth";
@@ -12,6 +13,7 @@ function BookListings() {
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("All");
   const [sortOrder, setSortOrder] = useState("");
+  const [hoveredNavLink, setHoveredNavLink] = useState(null);
   const currentUser = getStoredUser();
 
   const colors = {
@@ -89,6 +91,22 @@ function BookListings() {
       cursor: "pointer",
       textDecoration: "none",
       fontSize: "0.9rem",
+      position: "relative",
+      display: "inline-flex",
+      alignItems: "center",
+      paddingBottom: "8px",
+    },
+    navLinkUnderline: {
+      position: "absolute",
+      left: "50%",
+      bottom: 0,
+      width: "18px",
+      height: "4px",
+      borderRadius: "999px",
+      backgroundColor: colors.gold,
+      transform: "translateX(-50%) scaleX(0)",
+      transformOrigin: "center",
+      transition: "transform 0.18s ease",
     },
     userInfo: {
       color: colors.white,
@@ -265,6 +283,26 @@ function BookListings() {
     currentUser?.fullName ||
     (currentUser?.email ? currentUser.email.split("@")[0] : null);
 
+  const renderNavLink = (id, label, onClick) => (
+    <span
+      style={styles.navLink}
+      onClick={onClick}
+      onMouseEnter={() => setHoveredNavLink(id)}
+      onMouseLeave={() => setHoveredNavLink(null)}
+    >
+      {label}
+      <span
+        style={{
+          ...styles.navLinkUnderline,
+          transform:
+            hoveredNavLink === id
+              ? "translateX(-50%) scaleX(1)"
+              : "translateX(-50%) scaleX(0)",
+        }}
+      />
+    </span>
+  );
+
   return (
     <div style={styles.wrapper}>
       {/* Navigation */}
@@ -273,6 +311,11 @@ function BookListings() {
           <span style={styles.userInfo}>
             {displayName ? `Logged in as ${displayName}` : "Not logged in"}
           </span>
+          {renderNavLink("messages", "Messages", () => navigate("/messages"))}
+          {renderNavLink("profile", "Profile", () => navigate("/profile"))}
+          {renderNavLink("logout", "Logout", handleLogout)}
+          {false && (
+            <>
           <span style={styles.navLink} onClick={() => navigate("/messages")}>
             💬 Messages
           </span>
@@ -282,6 +325,8 @@ function BookListings() {
           <span style={styles.navLink} onClick={handleLogout}>
             Logout
           </span>
+            </>
+          )}
         </div>
       </nav>
 
