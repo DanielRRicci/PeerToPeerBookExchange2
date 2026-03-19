@@ -146,6 +146,27 @@ async function ensureSchema() {
       if (error.code !== 'ER_DUP_FIELDNAME') throw error;
     }
   }
+
+
+  await runQuery(`
+    ALTER TABLE StudyMaterials
+    MODIFY COLUMN uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  `);
+
+  try {
+    await runQuery(`
+      ALTER TABLE StudyMaterials
+      ADD CONSTRAINT fk_studymaterials_user
+      FOREIGN KEY (user_id)
+      REFERENCES Users(user_id)
+      ON DELETE CASCADE
+      ON UPDATE CASCADE
+    `);
+  } catch (error) {
+    if (error.code !== "ER_DUP_KEYNAME" && error.code !== "ER_CANT_CREATE_TABLE") throw error;
+  }
+
+
 }
 
 const r2Client = new S3Client({
