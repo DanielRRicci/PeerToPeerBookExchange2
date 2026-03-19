@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { getApiBaseUrl } from "./apiBaseUrl";
+import { getStoredUser, setStoredUser } from "./auth";
 
 function Profile() {
   const [user, setUser] = useState(null);
@@ -66,6 +67,10 @@ function Profile() {
 
       // Step 4: update UI
       setUser((prev) => ({ ...prev, profile_image_url: publicUrl }));
+      const storedUser = getStoredUser();
+      if (storedUser) {
+        setStoredUser({ ...storedUser, profile_image_url: publicUrl });
+      }
     } catch (err) {
       console.error("Avatar upload failed:", err);
     }
