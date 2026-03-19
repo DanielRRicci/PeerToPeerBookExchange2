@@ -1,12 +1,51 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { clearStoredUser, getStoredUser } from "./auth";
+import { clearStoredUser, getStoredUser, setStoredUser, subscribeToAuthChanges } from "./auth";
 import { getApiBaseUrl } from "./apiBaseUrl";
 
 export default function TopNav() {
   const navigate = useNavigate();
   const [hoveredNavLink, setHoveredNavLink] = useState(null);
-  const currentUser = getStoredUser();
+  const [currentUser, setCurrentUser] = useState(() => getStoredUser());
+
+  useEffect(() => {
+    return subscribeToAuthChanges(() => {
+      setCurrentUser(getStoredUser());
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    let isActive = true;
+
+    async function loadCurrentUserProfile() {
+      try {
+        const baseUrl = getApiBaseUrl();
+        const response = await fetch(`${baseUrl}/api/users/${currentUser.id}`);
+        if (!response.ok) return;
+
+        const profile = await response.json();
+        if (!isActive) return;
+
+        const nextUser = {
+          ...currentUser,
+          profile_image_url: profile.profile_image_url || null,
+        };
+
+        setCurrentUser(nextUser);
+        setStoredUser(nextUser);
+      } catch {
+        // Keep the fallback icon if profile lookup fails.
+      }
+    }
+
+    loadCurrentUserProfile();
+
+    return () => {
+      isActive = false;
+    };
+  }, [currentUser?.id]);
 
   const colors = {
     gold: "#FFBD00",
@@ -50,17 +89,39 @@ export default function TopNav() {
       alignItems: "center",
       transition: "transform 0.18s ease",
     },
-    userInfo: {
-      color: colors.white,
-      fontWeight: "600",
-      fontSize: "0.9rem",
+    userAvatarButton: {
+      width: "36px",
+      height: "36px",
+      borderRadius: "50%",
+      overflow: "hidden",
+      border: `2px solid ${colors.gold}`,
+      backgroundColor: colors.black,
+      padding: 0,
+      cursor: "pointer",
+      display: "inline-flex",
+      alignItems: "center",
+      justifyContent: "center",
+      flexShrink: 0,
+    },
+    userAvatar: {
+      width: "100%",
+      height: "100%",
+      objectFit: "cover",
     },
   };
 
   const displayName =
     currentUser?.username ||
     currentUser?.fullName ||
-    (currentUser?.email ? currentUser.email.split("@")[0] : null);
+    (currentUser?.email ? currentUser.email.split("@")[0] : "User");
+  const defaultAvatar = `data:image/svg+xml;utf8,${encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+      <rect width="40" height="40" rx="20" fill="#F2F2F2"/>
+      <circle cx="20" cy="15" r="7" fill="#9A9A9A"/>
+      <path d="M10 32c1.8-5.4 6-8 10-8s8.2 2.6 10 8" fill="#9A9A9A"/>
+    </svg>
+  `)}`;
+  const avatarSrc = currentUser?.profile_image_url || defaultAvatar;
 
   const getNavLinkStyle = (id) => ({
     ...styles.navLink,
@@ -75,7 +136,7 @@ export default function TopNav() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: currentUser?.id ?? null }),
       });
-    } catch (_error) {
+    } catch {
       // still clear local auth
     }
 
@@ -90,9 +151,17 @@ export default function TopNav() {
       </div>
 
       <div style={styles.navLinks}>
-        <span style={styles.userInfo}>
-          {displayName ? `Logged in as ${displayName}` : "Not logged in"}
-        </span>
+        {currentUser ? (
+          <button
+            type="button"
+            style={styles.userAvatarButton}
+            onClick={() => navigate("/profile")}
+            title={displayName}
+            aria-label={`${displayName} profile`}
+          >
+            <img src={avatarSrc} alt={displayName} style={styles.userAvatar} />
+          </button>
+        ) : null}
 
         <span
           style={getNavLinkStyle("listings")}

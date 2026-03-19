@@ -514,7 +514,7 @@ app.post('/api/login', async (req, res) => {
 
   try {
     const users = await runQuery(
-      'SELECT user_id, full_name, email, password_hash, is_verified FROM Users WHERE email = ? LIMIT 1',
+      'SELECT user_id, full_name, email, password_hash, is_verified, profile_image_url FROM Users WHERE email = ? LIMIT 1',
       [normalizedEmail]
     );
 
@@ -551,7 +551,12 @@ app.post('/api/login', async (req, res) => {
 
     return res.status(200).json({
       message: 'Login successful.',
-      user: { id: user.user_id, fullName: user.full_name, email: user.email },
+      user: {
+        id: user.user_id,
+        fullName: user.full_name,
+        email: user.email,
+        profile_image_url: user.profile_image_url,
+      },
     });
   } catch (error) {
     console.error('Error logging in:', error);
