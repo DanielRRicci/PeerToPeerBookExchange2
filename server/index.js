@@ -1,6 +1,5 @@
 // server/index.js
-require("dotenv").config({ path: __dirname + '/.env' });
-const express = require("express");
+require("dotenv").config({ path: '../client/.env' });const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
 const crypto = require("crypto");
@@ -117,6 +116,20 @@ async function ensureSchema() {
       verification_expires_at DATETIME,
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    )
+  `);
+
+   // Notes table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS Notes (
+      note_id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      title VARCHAR(255) NOT NULL,
+      course_code VARCHAR(100),
+      description TEXT,
+      pdf_url VARCHAR(500) NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
     )
   `);
 
@@ -243,6 +256,35 @@ app.get("/BookListings", async (req, res, next) => {
 });
 
 // POST /BookListings
+
+app.get("/Notes", async (req, res, next) => {
+  try {
+    const rows = await runQuery(`
+      SELECT n.*, u.full_name AS seller_name
+      FROM Notes n
+      JOIN Users u ON u.user_id = n.user_id
+      ORDER BY n.created_at DESC
+    `);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+app.post("/Notes", async (req, res, next) => {
+  try {
+    const { user_id, title, course_code, description, pdf_url } = req.body;
+    if (!user_id || !title || !pdf_url) {
+      return res.status(400).json({ error: "user_id, title, and pdf_url are required." });
+    }
+    const result = await runQuery(
+      `INSERT INTO Notes (user_id, title, course_code, description, pdf_url)
+       VALUES (?, ?, ?, ?, ?)`,
+      [user_id, title.trim(), course_code || null, description || null, pdf_url]
+    );
+    res.status(201).json({ message: "Notes posted successfully.", note_id: result.insertId });
+  } catch (err) { next(err); }
+});
+
+
 app.post("/BookListings", async (req, res, next) => {
   try {
     const {
@@ -683,26 +725,28 @@ app.post("/api/images", upload.array("images", 6), async (req, res, next) => {
 
 app.get("/api/upload-url", async (req, res, next) => {
   try {
-    const { filename, contentType } = req.query;
+    const { filename, contentType, folder } = req.query;
     if (!filename || !contentType) {
       return res.status(400).json({ error: "filename and contentType are required." });
     }
- 
-    const key = `Profile_Pic/${Date.now()}-${filename}`;
- 
+
+    const allowedFolders = ["Profile_Pic", "Post_Pic", "PDF"];
+    const targetFolder = allowedFolders.includes(folder) ? folder : "Profile_Pic";
+    const key = `${targetFolder}/${Date.now()}-${filename}`;
+
     const command = new PutObjectCommand({
-  Bucket: process.env.R2_BUCKET_NAME,
-  Key: key,
-  ContentType: contentType,
-  ChecksumAlgorithm: undefined,
-});
- 
-const uploadUrl = await getSignedUrl(r2Client, command, { 
-  expiresIn: 900,
-  unhoistableHeaders: new Set(["x-amz-checksum-crc32"]),
-});
-const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
- 
+      Bucket: process.env.R2_BUCKET_NAME,
+      Key: key,
+      ContentType: contentType,
+      ChecksumAlgorithm: undefined,
+    });
+
+    const uploadUrl = await getSignedUrl(r2Client, command, {
+      expiresIn: 900,
+      unhoistableHeaders: new Set(["x-amz-checksum-crc32"]),
+    });
+
+    const publicUrl = `${process.env.R2_PUBLIC_URL}/${key}`;
     res.json({ uploadUrl, publicUrl });
   } catch (err) {
     next(err);
@@ -723,6 +767,23 @@ app.put("/api/users/:id/avatar", async (req, res, next) => {
   } catch (err) {
     next(err);
   }
+});
+
+app.get("/Notes", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    const rows = userId
+      ? await runQuery(`SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id WHERE n.user_id = ? ORDER BY n.created_at DESC`, [userId])
+      : await runQuery(`SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id ORDER BY n.created_at DESC`);
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+app.delete("/Notes/:id", async (req, res, next) => {
+  try {
+    await runQuery("DELETE FROM Notes WHERE note_id = ?", [req.params.id]);
+    res.json({ success: true });
+  } catch (err) { next(err); }
 });
 
 /*PROFILE ROUTES END*/

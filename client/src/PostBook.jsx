@@ -8,6 +8,9 @@ function PostBook() {
   const fileInputRef = useRef(null);
   const currentUser = getStoredUser();
 
+  // ADDED: mode toggle
+  const [mode, setMode] = useState("book");
+
   const [formData, setFormData] = useState({
     title: "",
     author: "",
@@ -23,6 +26,11 @@ function PostBook() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successMessage, setSuccessMessage] = useState("");
+
+  // ADDED: notes state
+  const [notesData, setNotesData] = useState({ title: "", course_code: "", description: "" });
+  const [pdfFile, setPdfFile] = useState(null);
+  const [pdfUploading, setPdfUploading] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -40,6 +48,12 @@ function PostBook() {
       ...prev,
       [name]: value,
     }));
+  };
+
+  // ADDED
+  const handleNotesChange = (e) => {
+    const { name, value } = e.target;
+    setNotesData((prev) => ({ ...prev, [name]: value }));
   };
 
   const getNextOpenSlotIndex = () => {
@@ -100,6 +114,60 @@ function PostBook() {
 
       return rebuilt;
     });
+  };
+
+  // ADDED: notes submit handler
+  const handleNotesSubmit = async (e) => {
+    e.preventDefault();
+    setError("");
+    setSuccessMessage("");
+
+    if (!currentUser?.id) { setError("You must be logged in to post notes."); return; }
+    if (!notesData.title.trim()) { setError("Title is required."); return; }
+    if (!pdfFile) { setError("Please select a PDF file."); return; }
+
+    setSubmitting(true);
+    setPdfUploading(true);
+
+    try {
+      const baseUrl = getApiBaseUrl();
+
+      const urlRes = await fetch(
+        `${baseUrl}/api/upload-url?filename=${encodeURIComponent(pdfFile.name)}&contentType=application/pdf&folder=PDF`
+      );
+      const { uploadUrl, publicUrl } = await urlRes.json();
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: pdfFile,
+        headers: { "Content-Type": "application/pdf" },
+      });
+
+      setPdfUploading(false);
+
+      const notesRes = await fetch(`${baseUrl}/Notes`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          title: notesData.title.trim(),
+          course_code: notesData.course_code.trim() || null,
+          description: notesData.description.trim() || null,
+          pdf_url: publicUrl,
+        }),
+      });
+
+      const notesJson = await notesRes.json();
+      if (!notesRes.ok) throw new Error(notesJson.error || "Failed to post notes.");
+
+      setSuccessMessage("Notes posted successfully!");
+      setTimeout(() => navigate("/booklistings"), 900);
+    } catch (err) {
+      setError(err.message || "Something went wrong.");
+    } finally {
+      setSubmitting(false);
+      setPdfUploading(false);
+    }
   };
 
   const handleSubmit = async (e) => {
@@ -262,6 +330,14 @@ function PostBook() {
       borderRadius: "20px",
       marginBottom: "1.5rem",
     },
+    // ADDED: toggle styles
+    toggle: {
+      display: "flex",
+      marginBottom: "1.5rem",
+      borderRadius: "8px",
+      overflow: "hidden",
+      border: `2px solid ${colors.black}`,
+    },
     formGrid: {
       display: "grid",
       gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
@@ -381,6 +457,16 @@ function PostBook() {
       color: colors.midGray,
       fontSize: "0.88rem",
     },
+    // ADDED
+    pdfBox: {
+      border: "2px dashed #d7d7d7",
+      borderRadius: "10px",
+      padding: "20px",
+      textAlign: "center",
+      backgroundColor: "#fafafa",
+      cursor: "pointer",
+      marginTop: "8px",
+    },
     submitButton: {
       width: "100%",
       padding: "14px",
@@ -433,176 +519,263 @@ function PostBook() {
   return (
     <div style={styles.wrapper}>
       <div style={styles.card}>
-        <h1 style={styles.mainHeading}>Post a Book</h1>
+        {/* CHANGED: heading reflects mode */}
+        <h1 style={styles.mainHeading}>{mode === "book" ? "Post a Book" : "Post Notes"}</h1>
         <div style={styles.uwmBadge}>Listings</div>
+
+        {/* ADDED: toggle */}
+        <div style={styles.toggle}>
+          <button
+            type="button"
+            style={{ flex: 1, padding: "10px", fontWeight: "700", fontSize: "0.9rem", cursor: "pointer", border: "none", backgroundColor: mode === "book" ? colors.black : colors.white, color: mode === "book" ? colors.gold : colors.black }}
+            onClick={() => { setMode("book"); setError(""); setSuccessMessage(""); }}
+          >
+            📚 Book
+          </button>
+          <button
+            type="button"
+            style={{ flex: 1, padding: "10px", fontWeight: "700", fontSize: "0.9rem", cursor: "pointer", border: "none", backgroundColor: mode === "notes" ? colors.black : colors.white, color: mode === "notes" ? colors.gold : colors.black }}
+            onClick={() => { setMode("notes"); setError(""); setSuccessMessage(""); }}
+          >
+            📄 Notes PDF
+          </button>
+        </div>
 
         {error && <div style={styles.messageError}>{error}</div>}
         {successMessage && <div style={styles.messageSuccess}>{successMessage}</div>}
 
-        <form onSubmit={handleSubmit}>
-          <div style={styles.formGrid}>
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Book Title *</label>
-              <input
-                style={styles.input}
-                type="text"
-                name="title"
-                placeholder="Fundamentals of Electric Circuits"
-                value={formData.title}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Author *</label>
-              <input
-                style={styles.input}
-                type="text"
-                name="author"
-                placeholder="Charles K. Alexander"
-                value={formData.author}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Edition</label>
-              <input
-                style={styles.input}
-                type="text"
-                name="edition"
-                placeholder="8th"
-                value={formData.edition}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>ISBN</label>
-              <input
-                style={styles.input}
-                type="text"
-                name="isbn"
-                placeholder="978-1260570798"
-                value={formData.isbn}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Course Code</label>
-              <input
-                style={styles.input}
-                type="text"
-                name="course_code"
-                placeholder="CompSci 361"
-                value={formData.course_code}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Condition *</label>
-              <select
-                style={styles.input}
-                name="book_condition"
-                value={formData.book_condition}
-                onChange={handleChange}
-                required
-              >
-                <option value="Like New">Like New</option>
-                <option value="Very Good">Very Good</option>
-                <option value="Good">Good</option>
-                <option value="Fair">Fair</option>
-                <option value="Poor">Poor</option>
-              </select>
-            </div>
-
-            <div style={styles.inputGroup}>
-              <label style={styles.label}>Price ($) *</label>
-              <input
-                style={styles.input}
-                type="number"
-                min="0"
-                step="0.01"
-                name="price"
-                placeholder="25.00"
-                value={formData.price}
-                onChange={handleChange}
-                required
-              />
-            </div>
-
-            <div style={{ ...styles.inputGroup, ...styles.fullWidth }}>
-              <label style={styles.label}>Notes</label>
-              <textarea
-                style={styles.textarea}
-                name="notes"
-                placeholder="Any highlights, wear, missing pages, access code info, etc."
-                value={formData.notes}
-                onChange={handleChange}
-              />
-            </div>
-
-            <div style={{ ...styles.fullWidth, ...styles.imageSection }}>
-              <label style={styles.label}>Photos (up to 6)</label>
-
-              <div style={styles.imageGrid}>
-                {imageSlots.map((slot, index) => (
-                  <div key={index} style={styles.imageSlot}>
-                    <div style={styles.imageNumberBadge}>{index + 1}</div>
-
-                    {slot ? (
-                      <>
-                        <img
-                          src={slot.previewUrl}
-                          alt={`Book preview ${index + 1}`}
-                          style={styles.imagePreview}
-                        />
-                        <button
-                          type="button"
-                          style={styles.removeButton}
-                          onClick={() => removeImageAtIndex(index)}
-                          aria-label={`Remove image ${index + 1}`}
-                        >
-                          ×
-                        </button>
-                      </>
-                    ) : (
-                      <div style={styles.imageSlotEmptyText}>Empty</div>
-                    )}
-                  </div>
-                ))}
+        {/* EXISTING: book form — only shown when mode === "book" */}
+        {mode === "book" && (
+          <form onSubmit={handleSubmit}>
+            <div style={styles.formGrid}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Book Title *</label>
+                <input
+                  style={styles.input}
+                  type="text"
+                  name="title"
+                  placeholder="Fundamentals of Electric Circuits"
+                  value={formData.title}
+                  onChange={handleChange}
+                  required
+                />
               </div>
 
-              <button
-                type="button"
-                style={styles.uploadButton}
-                onClick={handleUploadButtonClick}
-              >
-                Upload Image
-              </button>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Author *</label>
+                <input
+                  style={styles.input}
+                  type="text"
+                  name="author"
+                  placeholder="Charles K. Alexander"
+                  value={formData.author}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
 
-              <input
-                ref={fileInputRef}
-                style={styles.hiddenInput}
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/gif"
-                onChange={handleImagePick}
-              />
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Edition</label>
+                <input
+                  style={styles.input}
+                  type="text"
+                  name="edition"
+                  placeholder="8th"
+                  value={formData.edition}
+                  onChange={handleChange}
+                />
+              </div>
 
-              <div style={styles.helperText}>
-                Each new image fills the next open space. Image 1 uploads first, then 2, then 3, and so on.
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>ISBN</label>
+                <input
+                  style={styles.input}
+                  type="text"
+                  name="isbn"
+                  placeholder="978-1260570798"
+                  value={formData.isbn}
+                  onChange={handleChange}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Course Code</label>
+                <input
+                  style={styles.input}
+                  type="text"
+                  name="course_code"
+                  placeholder="CompSci 361"
+                  value={formData.course_code}
+                  onChange={handleChange}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Condition *</label>
+                <select
+                  style={styles.input}
+                  name="book_condition"
+                  value={formData.book_condition}
+                  onChange={handleChange}
+                  required
+                >
+                  <option value="Like New">Like New</option>
+                  <option value="Very Good">Very Good</option>
+                  <option value="Good">Good</option>
+                  <option value="Fair">Fair</option>
+                  <option value="Poor">Poor</option>
+                </select>
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Price ($) *</label>
+                <input
+                  style={styles.input}
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  name="price"
+                  placeholder="25.00"
+                  value={formData.price}
+                  onChange={handleChange}
+                  required
+                />
+              </div>
+
+              <div style={{ ...styles.inputGroup, ...styles.fullWidth }}>
+                <label style={styles.label}>Notes</label>
+                <textarea
+                  style={styles.textarea}
+                  name="notes"
+                  placeholder="Any highlights, wear, missing pages, access code info, etc."
+                  value={formData.notes}
+                  onChange={handleChange}
+                />
+              </div>
+
+              <div style={{ ...styles.fullWidth, ...styles.imageSection }}>
+                <label style={styles.label}>Photos (up to 6)</label>
+
+                <div style={styles.imageGrid}>
+                  {imageSlots.map((slot, index) => (
+                    <div key={index} style={styles.imageSlot}>
+                      <div style={styles.imageNumberBadge}>{index + 1}</div>
+
+                      {slot ? (
+                        <>
+                          <img
+                            src={slot.previewUrl}
+                            alt={`Book preview ${index + 1}`}
+                            style={styles.imagePreview}
+                          />
+                          <button
+                            type="button"
+                            style={styles.removeButton}
+                            onClick={() => removeImageAtIndex(index)}
+                            aria-label={`Remove image ${index + 1}`}
+                          >
+                            ×
+                          </button>
+                        </>
+                      ) : (
+                        <div style={styles.imageSlotEmptyText}>Empty</div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                <button
+                  type="button"
+                  style={styles.uploadButton}
+                  onClick={handleUploadButtonClick}
+                >
+                  Upload Image
+                </button>
+
+                <input
+                  ref={fileInputRef}
+                  style={styles.hiddenInput}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  onChange={handleImagePick}
+                />
+
+                <div style={styles.helperText}>
+                  Each new image fills the next open space. Image 1 uploads first, then 2, then 3, and so on.
+                </div>
               </div>
             </div>
-          </div>
 
-          <button type="submit" style={styles.submitButton} disabled={submitting}>
-            {submitting ? "Posting..." : "Post Listing"}
-          </button>
-        </form>
+            <button type="submit" style={styles.submitButton} disabled={submitting}>
+              {submitting ? "Posting..." : "Post Listing"}
+            </button>
+          </form>
+        )}
+
+        {/* ADDED: notes form */}
+        {mode === "notes" && (
+          <form onSubmit={handleNotesSubmit}>
+            <div style={styles.formGrid}>
+              <div style={{ ...styles.inputGroup, ...styles.fullWidth }}>
+                <label style={styles.label}>Notes Title *</label>
+                <input
+                  style={styles.input}
+                  type="text"
+                  name="title"
+                  placeholder="Exam 2 Study Guide"
+                  value={notesData.title}
+                  onChange={handleNotesChange}
+                  required
+                />
+              </div>
+
+              <div style={{ ...styles.inputGroup, ...styles.fullWidth }}>
+                <label style={styles.label}>Course Code</label>
+                <input
+                  style={styles.input}
+                  type="text"
+                  name="course_code"
+                  placeholder="CompSci 361"
+                  value={notesData.course_code}
+                  onChange={handleNotesChange}
+                />
+              </div>
+
+              <div style={{ ...styles.inputGroup, ...styles.fullWidth }}>
+                <label style={styles.label}>Description</label>
+                <textarea
+                  style={styles.textarea}
+                  name="description"
+                  placeholder="What's covered, which professor, semester, etc."
+                  value={notesData.description}
+                  onChange={handleNotesChange}
+                />
+              </div>
+
+              <div style={{ ...styles.inputGroup, ...styles.fullWidth }}>
+                <label style={styles.label}>PDF File *</label>
+                <div style={styles.pdfBox} onClick={() => document.getElementById("pdfInput").click()}>
+                  {pdfFile ? (
+                    <span style={{ fontWeight: "700", color: colors.darkGray }}>📄 {pdfFile.name}</span>
+                  ) : (
+                    <span style={{ color: colors.midGray }}>Click to select a PDF file</span>
+                  )}
+                </div>
+                <input
+                  id="pdfInput"
+                  type="file"
+                  accept="application/pdf"
+                  style={styles.hiddenInput}
+                  onChange={(e) => setPdfFile(e.target.files[0])}
+                />
+              </div>
+            </div>
+
+            <button type="submit" style={styles.submitButton} disabled={submitting}>
+              {pdfUploading ? "Uploading PDF..." : submitting ? "Posting..." : "Post Notes"}
+            </button>
+          </form>
+        )}
 
         <div style={styles.footerLink}>
           Back to <a href="/booklistings" style={styles.link}>Listings</a>

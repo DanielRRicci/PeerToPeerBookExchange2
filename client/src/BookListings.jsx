@@ -11,6 +11,7 @@ function BookListings() {
   const [searchTerm, setSearchTerm] = useState("");
   const [category, setCategory] = useState("All");
   const [sortOrder, setSortOrder] = useState("");
+  const [typeFilter, setTypeFilter] = useState("All"); // ADDED
 
   const colors = {
     gold: "#FFBD00",
@@ -20,14 +21,22 @@ function BookListings() {
     lightGray: "#F4F4F4",
   };
 
+  // CHANGED: fetch both BookListings and Notes
   useEffect(() => {
     const fetchListings = async () => {
       try {
-        const response = await fetch(`${getApiBaseUrl()}/BookListings`);
-        if (!response.ok) throw new Error("Failed to fetch listings");
-
-        const data = await response.json();
-        setBooks(data);
+        const baseUrl = getApiBaseUrl();
+        const [booksRes, notesRes] = await Promise.all([
+          fetch(`${baseUrl}/BookListings`),
+          fetch(`${baseUrl}/Notes`),
+        ]);
+        const booksData = booksRes.ok ? await booksRes.json() : [];
+        const notesData = notesRes.ok ? await notesRes.json() : [];
+        const combined = [
+          ...booksData.map((b) => ({ ...b, _type: "book" })),
+          ...notesData.map((n) => ({ ...n, _type: "notes", listing_id: `n-${n.note_id}`, price: 0 })),
+        ];
+        setBooks(combined);
       } catch (error) {
         console.error("Error fetching books:", error);
       } finally {
@@ -48,7 +57,13 @@ function BookListings() {
 
     const matchesCategory = category === "All" || course.includes(category);
 
-    return matchesSearch && matchesCategory;
+    // ADDED
+    const matchesType =
+      typeFilter === "All" ||
+      (typeFilter === "Books" && book._type === "book") ||
+      (typeFilter === "Notes" && book._type === "notes");
+
+    return matchesSearch && matchesCategory && matchesType;
   });
 
   if (sortOrder === "lowToHigh") {
@@ -127,6 +142,18 @@ function BookListings() {
     courseBadge: {
       backgroundColor: colors.black,
       color: colors.gold,
+      fontSize: "0.7rem",
+      fontWeight: "700",
+      padding: "4px 8px",
+      borderRadius: "4px",
+      alignSelf: "flex-start",
+      marginBottom: "0.5rem",
+      textTransform: "uppercase",
+    },
+    // ADDED
+    notesBadge: {
+      backgroundColor: colors.gold,
+      color: colors.black,
       fontSize: "0.7rem",
       fontWeight: "700",
       padding: "4px 8px",
@@ -237,6 +264,20 @@ function BookListings() {
             onBlur={(e) => (e.target.style.borderColor = "#eee")}
           />
 
+          {/* ADDED: Type filter */}
+          <label style={styles.label}>Type</label>
+          <select
+            style={styles.input}
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+            onFocus={(e) => (e.target.style.borderColor = colors.gold)}
+            onBlur={(e) => (e.target.style.borderColor = "#eee")}
+          >
+            <option value="All">All</option>
+            <option value="Books">Books</option>
+            <option value="Notes">Notes PDFs</option>
+          </select>
+
           <label style={styles.label}>Department</label>
           <select
             style={styles.input}
@@ -283,6 +324,7 @@ function BookListings() {
               const stored = localStorage.getItem("bookExchangeUser");
               const currentUser = stored ? JSON.parse(stored) : null;
               const isOwnListing = currentUser && currentUser.id === book.user_id;
+              const isNotes = book._type === "notes"; // ADDED
 
               return (
                 <div
@@ -295,35 +337,65 @@ function BookListings() {
                     (e.currentTarget.style.transform = "translateY(0)")
                   }
                 >
-                  <img
-                    src={
-                      book.image_url ||
-                      "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=1000"
-                    }
-                    alt={book.title}
-                    style={styles.cardImage}
-                  />
+                  {/* CHANGED: notes show emoji instead of image */}
+                  {isNotes ? (
+                    <div style={{ ...styles.cardImage, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f9f3e3", fontSize: "3rem" }}>
+                      📄
+                    </div>
+                  ) : (
+                    <img
+                      src={
+                        book.image_url ||
+                        "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=1000"
+                      }
+                      alt={book.title}
+                      style={styles.cardImage}
+                    />
+                  )}
 
                   <div style={styles.cardContent}>
-                    <div style={styles.courseBadge}>
-                      {book.course_code || "General"}
+                    {/* CHANGED: notes get gold badge, books get black badge */}
+                    <div style={isNotes ? styles.notesBadge : styles.courseBadge}>
+                      {isNotes ? "📄 Notes PDF" : (book.course_code || "General")}
                     </div>
 
                     <div style={styles.bookTitle}>{book.title}</div>
-                    <div style={styles.bookAuthor}>{book.author}</div>
+                    <div style={styles.bookAuthor}>
+                      {isNotes ? (book.course_code || "") : book.author}
+                    </div>
+
+                    {/* ADDED: notes description */}
+                    {isNotes && book.description && (
+                      <div style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.5rem" }}>
+                        {book.description}
+                      </div>
+                    )}
 
                     <div style={styles.cardFooter}>
-                      <div style={styles.price}>${book.price}</div>
+                      {/* CHANGED: notes show Free, books show price */}
+                      <div style={styles.price}>{isNotes ? "Free" : `$${book.price}`}</div>
 
                       <div style={styles.buttonGroup}>
-                        <button style={styles.buyButton}>Details</button>
-                        {!isOwnListing && (
+                        {/* CHANGED: notes get View PDF button, books get Details + Contact */}
+                        {isNotes ? (
                           <button
-                            style={styles.contactButton}
-                            onClick={() => handleContact(book)}
+                            style={styles.buyButton}
+                            onClick={() => window.open(book.pdf_url, "_blank")}
                           >
-                            Contact
+                            View PDF
                           </button>
+                        ) : (
+                          <>
+                            <button style={styles.buyButton}>Details</button>
+                            {!isOwnListing && (
+                              <button
+                                style={styles.contactButton}
+                                onClick={() => handleContact(book)}
+                              >
+                                Contact
+                              </button>
+                            )}
+                          </>
                         )}
                       </div>
                     </div>

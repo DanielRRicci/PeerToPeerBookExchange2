@@ -7,6 +7,7 @@ function Profile() {
   const [editingId, setEditingId] = useState(null);
   const [editData, setEditData] = useState({});
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [notes, setNotes] = useState([]); // ADDED
 
   useEffect(() => {
     const stored = localStorage.getItem("bookExchangeUser");
@@ -23,6 +24,11 @@ function Profile() {
     fetch(`${baseUrl}/api/listings?userId=${userId}`)
       .then((res) => res.json())
       .then((data) => setListings(Array.isArray(data) ? data : []));
+
+    // ADDED
+    fetch(`${baseUrl}/Notes?userId=${userId}`)
+      .then((res) => res.json())
+      .then((data) => setNotes(Array.isArray(data) ? data : []));
   }, []);
 
   async function handleAvatarChange(e) {
@@ -90,6 +96,13 @@ function Profile() {
         setListings(listings.map((book) => (book.listing_id === parseInt(id) ? updatedBook : book)));
         setEditingId(null);
       });
+  }
+
+  // ADDED
+  function handleDeleteNote(id) {
+    const baseUrl = getApiBaseUrl();
+    fetch(`${baseUrl}/Notes/${id}`, { method: "DELETE" });
+    setNotes(notes.filter((note) => note.note_id !== id));
   }
 
   if (!user) return <p>Loading...</p>;
@@ -311,6 +324,30 @@ function Profile() {
                 <button style={{ ...styles.btn, backgroundColor: "#fff", color: "red", border: "1px solid red" }} onClick={() => handleDelete(book.listing_id)}>Delete</button>
               </div>
             )}
+          </div>
+        ))}
+
+        {/* ADDED: notes section */}
+        <h2 style={{ ...styles.mainHeading, marginTop: "1.5rem" }}>My Notes ({notes.length})</h2>
+
+        {notes.map((note) => (
+          <div key={note.note_id} style={styles.listingRow}>
+            <span style={{ fontWeight: "700" }}>📄 {note.title}</span>
+            <span style={styles.listingText}>
+            {note.course_code || "No course"}
+          </span>
+            <button
+              style={{ ...styles.btn, backgroundColor: colors.gold, color: colors.black }}
+              onClick={() => window.open(note.pdf_url, "_blank")}
+            >
+              View
+            </button>
+            <button
+              style={{ ...styles.btn, backgroundColor: "#fff", color: "red", border: "1px solid red" }}
+              onClick={() => handleDeleteNote(note.note_id)}
+            >
+              Delete
+            </button>
           </div>
         ))}
 
