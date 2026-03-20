@@ -168,12 +168,15 @@ export default function Login() {
           overflow: hidden;
         }
 
-        /* FRONT face: gold panel */
         .face-front {
           background: linear-gradient(155deg, #FFBD00 0%, #e6a800 45%, #c97d00 100%);
           display: flex; flex-direction: column;
           justify-content: center; align-items: center;
           padding: 48px 36px; text-align: center;
+          pointer-events: none;
+        }
+        .face-front.active {
+          pointer-events: all;
         }
         .face-front::before {
           content: ''; position: absolute;
@@ -194,6 +197,10 @@ export default function Login() {
           justify-content: center;
           padding: 36px 40px;
           border-radius: 20px 0 0 20px;
+          pointer-events: none;
+        }
+        .face-back.active {
+          pointer-events: all;
         }
 
         /* Spine crease on the left edge of the flipping page */
@@ -312,7 +319,7 @@ export default function Login() {
             <div className="spine-center" />
 
             {/* FRONT FACE — gold panel */}
-            <div className="face face-front">
+            <div className={`face face-front${progress < 0.5 ? ' active' : ''}`}>
               <div className="panel-content">
                 <div className="panel-icon">🎓</div>
                 <div className="uwm-tag">New here?</div>
@@ -328,7 +335,7 @@ export default function Login() {
             </div>
 
             {/* BACK FACE — register form */}
-            <div className="face face-back">
+            <div className={`face face-back${progress > 0.5 ? ' active' : ''}`}>
               <button className="back-link" onClick={() => !animating && flipTo(0)}>
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
                   <path d="M13 8H3M7 12l-4-4 4-4" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
