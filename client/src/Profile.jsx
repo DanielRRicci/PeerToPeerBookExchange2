@@ -5,10 +5,22 @@ import { getStoredUser, setStoredUser } from "./auth";
 function Profile() {
   const [user, setUser] = useState(null);
   const [listings, setListings] = useState([]);
-  const [editingId, setEditingId] = useState(null);
-  const [editData, setEditData] = useState({});
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [notes, setNotes] = useState([]); // ADDED
+
+  // EDIT MODAL STATE
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editData, setEditData] = useState({
+    listing_id: null,
+    title: "",
+    author: "",
+    edition: "",
+    isbn: "",
+    course_code: "",
+    book_condition: "",
+    price: "",
+    notes: "",
+  });
 
   useEffect(() => {
     const stored = localStorage.getItem("bookExchangeUser");
@@ -80,13 +92,28 @@ function Profile() {
 
   function handleDelete(id) {
     const baseUrl = getApiBaseUrl();
-    fetch(`${baseUrl}/api/listings/${id}`, { method: "DELETE" });
-    setListings(listings.filter((book) => book.listing_id !== id));
+
+    fetch(`${baseUrl}/api/listings/${id}`, { method: "DELETE" })
+      .then(() => {
+        setListings((prev) => prev.filter((book) => book.listing_id !== id));
+      })
+      .catch((err) => console.error("Delete failed:", err));
   }
 
   function handleEdit(book) {
-    setEditingId(book.listing_id);
-    setEditData({ price: book.price, condition: book.book_condition });
+    setEditData({
+      listing_id: book.listing_id,
+      title: book.title || "",
+      author: book.author || "",
+      edition: book.edition || book.Edition || "",
+      isbn: book.isbn || "",
+      course_code: book.course_code || "",
+      book_condition: book.book_condition || "Good",
+      price: book.price || "",
+      notes: book.notes || "",
+    });
+
+    setShowEditModal(true);
   }
 
   function handleSave(id) {
@@ -101,6 +128,44 @@ function Profile() {
         setListings(listings.map((book) => (book.listing_id === parseInt(id) ? updatedBook : book)));
         setEditingId(null);
       });
+  }
+  async function handleSaveEdit() {
+    try {
+      const baseUrl = getApiBaseUrl();
+
+      const res = await fetch(`${baseUrl}/api/listings/${editData.listing_id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: editData.title,
+          author: editData.author,
+          edition: editData.edition || null,
+          isbn: editData.isbn || null,
+          course_code: editData.course_code || null,
+          book_condition: editData.book_condition,
+          condition: editData.book_condition,
+          price: Number(editData.price),
+          notes: editData.notes || null,
+        }),
+      });
+
+      const updatedBook = await res.json();
+
+      if (!res.ok) {
+        throw new Error(updatedBook.error || "Failed to update listing.");
+      }
+
+      setListings((prev) =>
+        prev.map((book) =>
+          book.listing_id === editData.listing_id ? updatedBook : book
+        )
+      );
+
+      setShowEditModal(false);
+    } catch (err) {
+      console.error("Update failed:", err);
+      alert(err.message || "Failed to update listing.");
+    }
   }
 
   // ADDED
@@ -199,24 +264,6 @@ function Profile() {
       marginBottom: "1rem",
       fontSize: "0.95rem",
     },
-    input: {
-      flex: 1,
-      padding: "8px 10px",
-      borderRadius: "6px",
-      border: "2px solid #eee",
-      fontSize: "0.9rem",
-      boxSizing: "border-box",
-      minWidth: "60px",
-    },
-    select: {
-      flex: 1,
-      padding: "8px 10px",
-      borderRadius: "6px",
-      border: "2px solid #eee",
-      fontSize: "0.9rem",
-      backgroundColor: colors.white,
-      minWidth: "80px",
-    },
     listingRow: {
       display: "flex",
       alignItems: "center",
@@ -232,13 +279,6 @@ function Profile() {
     listingText: {
       flex: 1,
       color: colors.darkGray,
-    },
-    editRow: {
-      display: "flex",
-      alignItems: "center",
-      gap: "8px",
-      marginBottom: "10px",
-      flexWrap: "wrap",
     },
     btn: {
       padding: "6px 12px",
@@ -259,6 +299,66 @@ function Profile() {
       textDecoration: "none",
       borderBottom: `2px solid ${colors.gold}`,
     },
+    modalOverlay: {
+      position: "fixed",
+      top: 0,
+      left: 0,
+      width: "100vw",
+      height: "100vh",
+      backgroundColor: "rgba(0,0,0,0.6)",
+      display: "flex",
+      justifyContent: "center",
+      alignItems: "center",
+      zIndex: 999,
+      padding: "20px",
+      boxSizing: "border-box",
+    },
+    modalCard: {
+      width: "100%",
+      maxWidth: "700px",
+      backgroundColor: colors.white,
+      padding: "2rem",
+      borderRadius: "12px",
+      boxShadow: "0 20px 40px rgba(0,0,0,0.3)",
+      textAlign: "left",
+      maxHeight: "90vh",
+      overflowY: "auto",
+    },
+    formGrid: {
+      display: "grid",
+      gridTemplateColumns: "repeat(2, 1fr)",
+      gap: "12px",
+    },
+    inputGroup: {
+      display: "flex",
+      flexDirection: "column",
+    },
+    fullWidth: {
+      gridColumn: "1 / -1",
+    },
+    label: {
+      fontSize: "0.8rem",
+      fontWeight: "700",
+      marginBottom: "4px",
+      color: colors.darkGray,
+      textTransform: "uppercase",
+    },
+    input: {
+      padding: "10px",
+      borderRadius: "6px",
+      border: "1px solid #ccc",
+      fontSize: "0.95rem",
+      boxSizing: "border-box",
+    },
+    textarea: {
+      padding: "10px",
+      borderRadius: "6px",
+      border: "1px solid #ccc",
+      minHeight: "100px",
+      resize: "vertical",
+      fontSize: "0.95rem",
+      boxSizing: "border-box",
+    },
   };
 
   const defaultAvatar = `https://ui-avatars.com/api/?name=${encodeURIComponent(user.full_name)}&background=FFBD00&color=000&size=100`;
@@ -269,24 +369,24 @@ function Profile() {
 
         {/* Avatar */}
         <div style={{ display: "flex", justifyContent: "center", marginBottom: "1rem" }}>
-        <label style={{ ...styles.avatarWrapper, margin: 0 }} title="Click to change photo">
-          <input
-            type="file"
-            accept="image/*"
-            style={{ display: "none" }}
-            onChange={handleAvatarChange}
-            disabled={avatarUploading}
-          />
-          <img
-            src={user.profile_image_url || defaultAvatar}
-            alt="Profile"
-            style={{ ...styles.avatar, opacity: avatarUploading ? 0.5 : 1 }}
-          />
-          <div style={styles.avatarOverlay}>
-            {avatarUploading ? "..." : "✎"}
-          </div>
-        </label>
-      </div>
+          <label style={{ ...styles.avatarWrapper, margin: 0 }} title="Click to change photo">
+            <input
+              type="file"
+              accept="image/*"
+              style={{ display: "none" }}
+              onChange={handleAvatarChange}
+              disabled={avatarUploading}
+            />
+            <img
+              src={user.profile_image_url || defaultAvatar}
+              alt="Profile"
+              style={{ ...styles.avatar, opacity: avatarUploading ? 0.5 : 1 }}
+            />
+            <div style={styles.avatarOverlay}>
+              {avatarUploading ? "..." : "✎"}
+            </div>
+          </label>
+        </div>
 
         <h1 style={styles.mainHeading}>{user.full_name}</h1>
         <div style={styles.uwmBadge}>UWM Panther</div>
@@ -295,40 +395,30 @@ function Profile() {
         <h2 style={styles.mainHeading}>My Listings ({listings.length})</h2>
 
         {listings.map((book) => (
-          <div key={book.listing_id}>
-            {editingId === book.listing_id ? (
-              <div style={styles.editRow}>
-                <span style={{ fontWeight: "700", fontSize: "0.9rem" }}>{book.title}</span>
-                <input
-                  style={styles.input}
-                  value={editData.price}
-                  onChange={(e) => setEditData({ ...editData, price: e.target.value })}
-                  placeholder="Price"
-                />
-                <select
-                  style={styles.select}
-                  value={editData.condition}
-                  onChange={(e) => setEditData({ ...editData, condition: e.target.value })}
-                >
-                  <option>New</option>
-                  <option>Like New</option>
-                  <option>Good</option>
-                  <option>Fair</option>
-                  <option>Poor</option>
-                </select>
-                <button style={{ ...styles.btn, backgroundColor: colors.gold, color: colors.black }} onClick={() => handleSave(book.listing_id)}>Save</button>
-                <button style={{ ...styles.btn, backgroundColor: "#eee", color: colors.darkGray }} onClick={() => setEditingId(null)}>Cancel</button>
-              </div>
-            ) : (
-              <div style={styles.listingRow}>
-                <span style={{ fontWeight: "700" }}>{book.title}</span>
-                <span style={styles.listingText}>
-                  {book.author} · {book.course_code} · {book.book_condition} · ${book.price}
-                </span>
-                <button style={{ ...styles.btn, backgroundColor: colors.gold, color: colors.black }} onClick={() => handleEdit(book)}>Edit</button>
-                <button style={{ ...styles.btn, backgroundColor: "#fff", color: "red", border: "1px solid red" }} onClick={() => handleDelete(book.listing_id)}>Delete</button>
-              </div>
-            )}
+          <div key={book.listing_id} style={styles.listingRow}>
+            <span style={{ fontWeight: "700" }}>{book.title}</span>
+            <span style={styles.listingText}>
+              {book.author} · {book.course_code} · {book.book_condition} · ${book.price}
+            </span>
+
+            <button
+              style={{ ...styles.btn, backgroundColor: colors.gold, color: colors.black }}
+              onClick={() => handleEdit(book)}
+            >
+              Edit
+            </button>
+
+            <button
+              style={{
+                ...styles.btn,
+                backgroundColor: "#fff",
+                color: "red",
+                border: "1px solid red",
+              }}
+              onClick={() => handleDelete(book.listing_id)}
+            >
+              Delete
+            </button>
           </div>
         ))}
 
@@ -339,8 +429,8 @@ function Profile() {
           <div key={note.note_id} style={styles.listingRow}>
             <span style={{ fontWeight: "700" }}>📄 {note.title}</span>
             <span style={styles.listingText}>
-            {note.course_code || "No course"}
-          </span>
+              {note.course_code || "No course"}
+            </span>
             <button
               style={{ ...styles.btn, backgroundColor: colors.gold, color: colors.black }}
               onClick={() => window.open(note.pdf_url, "_blank")}
@@ -356,10 +446,134 @@ function Profile() {
           </div>
         ))}
 
+
         <div style={styles.footerLink}>
-          <a href="/booklistings" style={styles.link}>← Back to Listings</a>
+          <Link to="/booklistings" style={styles.link}>
+            ← Back to Listings
+          </Link>
         </div>
       </div>
+
+      {showEditModal && (
+        <div style={styles.modalOverlay}>
+          <div style={styles.modalCard}>
+            <h2 style={styles.mainHeading}>Edit Book Listing</h2>
+
+            <div style={styles.formGrid}>
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Book Title *</label>
+                <input
+                  style={styles.input}
+                  value={editData.title}
+                  onChange={(e) => setEditData({ ...editData, title: e.target.value })}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Author *</label>
+                <input
+                  style={styles.input}
+                  value={editData.author}
+                  onChange={(e) => setEditData({ ...editData, author: e.target.value })}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Edition</label>
+                <input
+                  style={styles.input}
+                  value={editData.edition}
+                  onChange={(e) => setEditData({ ...editData, edition: e.target.value })}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>ISBN</label>
+                <input
+                  style={styles.input}
+                  value={editData.isbn}
+                  onChange={(e) => setEditData({ ...editData, isbn: e.target.value })}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Course Code</label>
+                <input
+                  style={styles.input}
+                  value={editData.course_code}
+                  onChange={(e) => setEditData({ ...editData, course_code: e.target.value })}
+                />
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Condition *</label>
+                <select
+                  style={styles.input}
+                  value={editData.book_condition}
+                  onChange={(e) =>
+                    setEditData({ ...editData, book_condition: e.target.value })
+                  }
+                >
+                  <option>New</option>
+                  <option>Like New</option>
+                  <option>Good</option>
+                  <option>Fair</option>
+                  <option>Poor</option>
+                </select>
+              </div>
+
+              <div style={styles.inputGroup}>
+                <label style={styles.label}>Price ($)</label>
+                <input
+                  style={styles.input}
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={editData.price}
+                  onChange={(e) => setEditData({ ...editData, price: e.target.value })}
+                />
+              </div>
+
+              <div style={{ ...styles.inputGroup, ...styles.fullWidth }}>
+                <label style={styles.label}>Notes</label>
+                <textarea
+                  style={styles.textarea}
+                  value={editData.notes}
+                  onChange={(e) => setEditData({ ...editData, notes: e.target.value })}
+                />
+              </div>
+            </div>
+
+            <button
+              style={{
+                ...styles.btn,
+                backgroundColor: colors.gold,
+                color: colors.black,
+                width: "100%",
+                marginTop: "12px",
+                padding: "12px",
+              }}
+              onClick={handleSaveEdit}
+            >
+              Save Changes
+            </button>
+
+            <button
+              style={{
+                ...styles.btn,
+                backgroundColor: "#eee",
+                color: colors.darkGray,
+                width: "100%",
+                marginTop: "8px",
+                padding: "12px",
+              }}
+              onClick={() => setShowEditModal(false)}
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

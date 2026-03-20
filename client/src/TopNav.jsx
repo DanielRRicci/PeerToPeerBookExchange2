@@ -147,7 +147,7 @@ export default function TopNav() {
   return (
     <nav style={styles.navbar}>
       <div style={styles.logo} onClick={() => navigate("/booklistings")}>
-        UWM Exchange
+        Peer To Peer Book Exchange
       </div>
 
       <div style={styles.navLinks}>
@@ -188,15 +188,6 @@ export default function TopNav() {
           onMouseLeave={() => setHoveredNavLink(null)}
         >
           💬 Messages
-        </span>
-
-        <span
-          style={getNavLinkStyle("profile")}
-          onClick={() => navigate("/profile")}
-          onMouseEnter={() => setHoveredNavLink("profile")}
-          onMouseLeave={() => setHoveredNavLink(null)}
-        >
-          Profile
         </span>
 
         <span

@@ -146,6 +146,27 @@ async function ensureSchema() {
       if (error.code !== 'ER_DUP_FIELDNAME') throw error;
     }
   }
+
+
+  await runQuery(`
+    ALTER TABLE StudyMaterials
+    MODIFY COLUMN uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+  `);
+
+  try {
+    await runQuery(`
+      ALTER TABLE StudyMaterials
+      ADD CONSTRAINT fk_studymaterials_user
+      FOREIGN KEY (user_id)
+      REFERENCES Users(user_id)
+      ON DELETE CASCADE
+      ON UPDATE CASCADE
+    `);
+  } catch (error) {
+    if (error.code !== "ER_DUP_KEYNAME" && error.code !== "ER_CANT_CREATE_TABLE") throw error;
+  }
+
+
 }
 
 const r2Client = new S3Client({
@@ -602,14 +623,66 @@ app.get('/api/listings', async (req, res, next) => {
 app.put('/api/listings/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { price, condition } = req.body;
-    if (price == null || !condition) return res.status(400).json({ error: 'price and condition are required.' });
+
+    const {
+      title,
+      author,
+      edition,
+      isbn,
+      course_code,
+      book_condition,
+      price,
+      notes,
+    } = req.body;
+
+    if (!title || !author || !book_condition || price == null) {
+      return res.status(400).json({
+        error: 'title, author, price, and book_condition are required.',
+      });
+    }
+
+    const cleanedTitle = String(title).trim();
+    const cleanedAuthor = String(author).trim();
+    const cleanedEdition = edition ? String(edition).trim() : null;
+    const cleanedIsbn = isbn ? String(isbn).trim() : null;
+    const cleanedCourseCode = course_code ? String(course_code).trim() : null;
+    const cleanedCondition = String(book_condition).trim();
+    const cleanedNotes = notes ? String(notes).trim() : null;
+    const numericPrice = Number(price);
+
+    if (Number.isNaN(numericPrice) || numericPrice < 0) {
+      return res.status(400).json({
+        error: 'Price must be a valid non-negative number.',
+      });
+    }
+
     await runQuery(
-      'UPDATE BookListings SET price = ?, book_condition = ? WHERE listing_id = ?',
-      [price, condition, id]
+      `UPDATE BookListings
+       SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
+           book_condition = ?, price = ?, notes = ?
+       WHERE listing_id = ?`,
+      [
+        cleanedTitle,
+        cleanedAuthor,
+        cleanedEdition,
+        cleanedIsbn,
+        cleanedCourseCode,
+        cleanedCondition,
+        numericPrice,
+        cleanedNotes,
+        id,
+      ]
     );
-    const updated = await runQuery('SELECT * FROM BookListings WHERE listing_id = ? LIMIT 1', [id]);
-    if (updated.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+
+    const updated = await runQuery(
+      'SELECT * FROM BookListings WHERE listing_id = ? LIMIT 1',
+      [id]
+    );
+
+    if (updated.length === 0) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+
     res.json(updated[0]);
   } catch (err) {
     next(err);
