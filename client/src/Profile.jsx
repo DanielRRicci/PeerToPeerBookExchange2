@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { getApiBaseUrl } from "./apiBaseUrl";
 import { getStoredUser, setStoredUser } from "./auth";
+import { Link } from "react-router-dom";
 
 function Profile() {
   const [user, setUser] = useState(null);
