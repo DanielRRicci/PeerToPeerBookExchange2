@@ -9,9 +9,12 @@ function BookListings() {
   const [loading, setLoading] = useState(true);
 
   const [searchTerm, setSearchTerm] = useState("");
+  // NEW: State to track which specific field we are searching
+  const [searchBy, setSearchBy] = useState("All"); 
+  
   const [category, setCategory] = useState("All");
   const [sortOrder, setSortOrder] = useState("");
-  const [typeFilter, setTypeFilter] = useState("All"); // ADDED
+  const [typeFilter, setTypeFilter] = useState("All"); 
 
   const colors = {
     gold: "#FFBD00",
@@ -21,7 +24,6 @@ function BookListings() {
     lightGray: "#F4F4F4",
   };
 
-  // CHANGED: fetch both BookListings and Notes
   useEffect(() => {
     const fetchListings = async () => {
       try {
@@ -47,17 +49,40 @@ function BookListings() {
     fetchListings();
   }, []);
 
+  // UPDATED: Targeted Search Logic
   let processedBooks = books.filter((book) => {
-    const title = book.title || "";
-    const course = book.course_code || "";
+    const searchLower = searchTerm.toLowerCase();
+    
+    const title = (book.title || "").toLowerCase();
+    const course = (book.course_code || "").toLowerCase();
+    const author = (book.author || "").toLowerCase();
+    const isbn = (book.isbn || "").toLowerCase();
+    const description = (book.description || "").toLowerCase();
 
-    const matchesSearch =
-      title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      course.toLowerCase().includes(searchTerm.toLowerCase());
+    let matchesSearch = true; // Default to true if search box is empty
 
-    const matchesCategory = category === "All" || course.includes(category);
+    // Only run the search check if they actually typed something
+    if (searchTerm.trim() !== "") {
+      if (searchBy === "All") {
+        matchesSearch =
+          title.includes(searchLower) ||
+          course.includes(searchLower) ||
+          author.includes(searchLower) ||
+          isbn.includes(searchLower) ||
+          description.includes(searchLower);
+      } else if (searchBy === "Title") {
+        matchesSearch = title.includes(searchLower);
+      } else if (searchBy === "Author") {
+        matchesSearch = author.includes(searchLower);
+      } else if (searchBy === "Course") {
+        matchesSearch = course.includes(searchLower);
+      } else if (searchBy === "ISBN") {
+        matchesSearch = isbn.includes(searchLower);
+      }
+    }
 
-    // ADDED
+    const matchesCategory = category === "All" || course.includes(category.toLowerCase());
+
     const matchesType =
       typeFilter === "All" ||
       (typeFilter === "Books" && book._type === "book") ||
@@ -150,7 +175,6 @@ function BookListings() {
       marginBottom: "0.5rem",
       textTransform: "uppercase",
     },
-    // ADDED
     notesBadge: {
       backgroundColor: colors.gold,
       color: colors.black,
@@ -219,7 +243,7 @@ function BookListings() {
       padding: "10px",
       borderRadius: "6px",
       border: "2px solid #eee",
-      marginBottom: "1rem",
+      marginBottom: "0.5rem", // Tightened to fit radio buttons below
       fontSize: "0.95rem",
       boxSizing: "border-box",
     },
@@ -229,6 +253,21 @@ function BookListings() {
       fontWeight: "700",
       marginBottom: "6px",
       color: colors.darkGray,
+    },
+    radioGroup: {
+      display: "flex",
+      flexWrap: "wrap", // Allows buttons to flow to next line if needed
+      gap: "10px",
+      marginBottom: "1.5rem",
+      marginTop: "0.2rem",
+    },
+    radioLabel: {
+      fontSize: "0.85rem",
+      color: colors.darkGray,
+      display: "flex",
+      alignItems: "center",
+      gap: "4px",
+      cursor: "pointer",
     },
   };
 
@@ -257,26 +296,62 @@ function BookListings() {
           <label style={styles.label}>Search</label>
           <input
             style={styles.input}
-            placeholder="Title or Keywords..."
+            placeholder={`Search by ${searchBy === "All" ? "keywords" : searchBy.toLowerCase()}...`}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             onFocus={(e) => (e.target.style.borderColor = colors.gold)}
             onBlur={(e) => (e.target.style.borderColor = "#eee")}
           />
 
-          {/* ADDED: Type filter */}
-          <label style={styles.label}>Type</label>
-          <select
-            style={styles.input}
-            value={typeFilter}
-            onChange={(e) => setTypeFilter(e.target.value)}
-            onFocus={(e) => (e.target.style.borderColor = colors.gold)}
-            onBlur={(e) => (e.target.style.borderColor = "#eee")}
-          >
-            <option value="All">All</option>
-            <option value="Books">Books</option>
-            <option value="Notes">Notes PDFs</option>
-          </select>
+          {/* NEW: Search By Radio Buttons */}
+          <div style={styles.radioGroup}>
+            {["All", "Title", "Author", "Course", "ISBN"].map((option) => (
+              <label key={option} style={styles.radioLabel}>
+                <input
+                  type="radio"
+                  name="searchBy"
+                  value={option}
+                  checked={searchBy === option}
+                  onChange={(e) => setSearchBy(e.target.value)}
+                />
+                {option}
+              </label>
+            ))}
+          </div>
+
+          <label style={styles.label}>Listing Type</label>
+          <div style={styles.radioGroup}>
+            <label style={styles.radioLabel}>
+              <input
+                type="radio"
+                name="typeFilter"
+                value="All"
+                checked={typeFilter === "All"}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              />
+              All
+            </label>
+            <label style={styles.radioLabel}>
+              <input
+                type="radio"
+                name="typeFilter"
+                value="Books"
+                checked={typeFilter === "Books"}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              />
+              Books
+            </label>
+            <label style={styles.radioLabel}>
+              <input
+                type="radio"
+                name="typeFilter"
+                value="Notes"
+                checked={typeFilter === "Notes"}
+                onChange={(e) => setTypeFilter(e.target.value)}
+              />
+              Notes
+            </label>
+          </div>
 
           <label style={styles.label}>Department</label>
           <select
@@ -324,7 +399,7 @@ function BookListings() {
               const stored = localStorage.getItem("bookExchangeUser");
               const currentUser = stored ? JSON.parse(stored) : null;
               const isOwnListing = currentUser && currentUser.id === book.user_id;
-              const isNotes = book._type === "notes"; // ADDED
+              const isNotes = book._type === "notes";
 
               return (
                 <div
@@ -337,7 +412,6 @@ function BookListings() {
                     (e.currentTarget.style.transform = "translateY(0)")
                   }
                 >
-                  {/* CHANGED: notes show emoji instead of image */}
                   {isNotes ? (
                     <div style={{ ...styles.cardImage, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f9f3e3", fontSize: "3rem" }}>
                       📄
@@ -354,7 +428,6 @@ function BookListings() {
                   )}
 
                   <div style={styles.cardContent}>
-                    {/* CHANGED: notes get gold badge, books get black badge */}
                     <div style={isNotes ? styles.notesBadge : styles.courseBadge}>
                       {isNotes ? "📄 Notes PDF" : (book.course_code || "General")}
                     </div>
@@ -364,7 +437,6 @@ function BookListings() {
                       {isNotes ? (book.course_code || "") : book.author}
                     </div>
 
-                    {/* ADDED: notes description */}
                     {isNotes && book.description && (
                       <div style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.5rem" }}>
                         {book.description}
@@ -372,11 +444,9 @@ function BookListings() {
                     )}
 
                     <div style={styles.cardFooter}>
-                      {/* CHANGED: notes show Free, books show price */}
                       <div style={styles.price}>{isNotes ? "Free" : `$${book.price}`}</div>
 
                       <div style={styles.buttonGroup}>
-                        {/* CHANGED: notes get View PDF button, books get Details + Contact */}
                         {isNotes ? (
                           <button
                             style={styles.buyButton}
