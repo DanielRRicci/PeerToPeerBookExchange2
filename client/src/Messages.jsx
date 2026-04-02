@@ -2,302 +2,61 @@ import React, { useState, useEffect, useRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getApiBaseUrl } from "./apiBaseUrl";
 
-const colors = {
-  gold: "#FFBD00",
-  black: "#000000",
-  white: "#FFFFFF",
-  darkGray: "#333333",
-  lightGray: "#F4F4F4",
-  midGray: "#999",
-};
-
 function getStoredUser() {
   try {
     const raw = localStorage.getItem("bookExchangeUser");
     return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
+  } catch { return null; }
 }
 
 function formatTime(ts) {
   if (!ts) return "";
-  const d = new Date(ts);
+  const d   = new Date(ts);
   const now = new Date();
-  const isToday =
-    d.getDate() === now.getDate() &&
-    d.getMonth() === now.getMonth() &&
-    d.getFullYear() === now.getFullYear();
-  if (isToday)
-    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  if (isToday) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
-const styles = {
-  wrapper: {
-    display: "flex",
-    height: "calc(100vh - 76px)",
-    width: "100vw",
-    overflow: "hidden",
-    fontFamily: "'Inter', 'Segoe UI', Roboto, sans-serif",
-    backgroundImage:
-      'linear-gradient(rgba(0,0,0,0.7), rgba(0,0,0,0.7)), url("https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=2070&auto=format&fit=crop")',
-    backgroundSize: "cover",
-    backgroundPosition: "center",
-    backgroundAttachment: "fixed",
-  },
-  sidebar: {
-    width: "320px",
-    minWidth: "260px",
-    display: "flex",
-    flexDirection: "column",
-    backgroundColor: colors.white,
-    borderRight: `4px solid ${colors.gold}`,
-    overflowY: "auto",
-  },
-  sidebarHeader: {
-    backgroundColor: colors.black,
-    color: colors.gold,
-    padding: "1.2rem 1.5rem",
-    fontSize: "1.1rem",
-    fontWeight: "800",
-    letterSpacing: "1px",
-    textTransform: "uppercase",
-    display: "flex",
-    justifyContent: "space-between",
-    alignItems: "center",
-    flexShrink: 0,
-  },
-  convItem: (active) => ({
-    padding: "1rem 1.2rem",
-    borderBottom: `1px solid ${colors.lightGray}`,
-    cursor: "pointer",
-    backgroundColor: active ? "#FFF8E1" : colors.white,
-    borderLeft: active ? `4px solid ${colors.gold}` : "4px solid transparent",
-    transition: "background 0.15s",
-  }),
-  convName: {
-    fontWeight: "700",
-    fontSize: "0.95rem",
-    color: colors.darkGray,
-  },
-  convMeta: {
-    fontSize: "0.8rem",
-    color: colors.midGray,
-    marginTop: "2px",
-    whiteSpace: "nowrap",
-    overflow: "hidden",
-    textOverflow: "ellipsis",
-  },
-  convBook: {
-    display: "inline-block",
-    backgroundColor: colors.black,
-    color: colors.gold,
-    fontSize: "0.65rem",
-    fontWeight: "700",
-    padding: "2px 7px",
-    borderRadius: "4px",
-    marginTop: "4px",
-    textTransform: "uppercase",
-  },
-  unreadDot: {
-    width: "9px",
-    height: "9px",
-    borderRadius: "50%",
-    backgroundColor: colors.gold,
-    flexShrink: 0,
-    marginTop: "4px",
-  },
-  chatPanel: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  chatHeader: {
-    backgroundColor: "rgba(0,0,0,0.85)",
-    backdropFilter: "blur(6px)",
-    padding: "1rem 1.5rem",
-    borderBottom: `3px solid ${colors.gold}`,
-    display: "flex",
-    alignItems: "center",
-    gap: "12px",
-    flexShrink: 0,
-  },
-  chatHeaderName: {
-    color: colors.white,
-    fontWeight: "700",
-    fontSize: "1rem",
-  },
-  chatHeaderBook: {
-    backgroundColor: colors.gold,
-    color: colors.black,
-    fontSize: "0.7rem",
-    fontWeight: "700",
-    padding: "3px 10px",
-    borderRadius: "20px",
-    textTransform: "uppercase",
-  },
-  messagesArea: {
-    flex: 1,
-    overflowY: "auto",
-    padding: "1.5rem",
-    display: "flex",
-    flexDirection: "column",
-    gap: "10px",
-  },
-  bubble: (isMine) => ({
-    maxWidth: "65%",
-    alignSelf: isMine ? "flex-end" : "flex-start",
-    backgroundColor: isMine ? colors.black : colors.white,
-    color: isMine ? colors.gold : colors.darkGray,
-    padding: "10px 14px",
-    borderRadius: isMine ? "18px 18px 4px 18px" : "18px 18px 18px 4px",
-    boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
-    wordBreak: "break-word",
-    fontSize: "0.92rem",
-    lineHeight: "1.4",
-  }),
-  bubbleTime: (isMine) => ({
-    fontSize: "0.7rem",
-    color: isMine ? "#aaa" : colors.midGray,
-    marginTop: "4px",
-    textAlign: isMine ? "right" : "left",
-  }),
-  inputBar: {
-    display: "flex",
-    gap: "10px",
-    padding: "1rem 1.5rem",
-    backgroundColor: "rgba(0,0,0,0.85)",
-    backdropFilter: "blur(6px)",
-    borderTop: `3px solid ${colors.gold}`,
-    flexShrink: 0,
-  },
-  textInput: {
-    flex: 1,
-    padding: "12px 16px",
-    borderRadius: "25px",
-    border: "2px solid #333",
-    backgroundColor: "#111",
-    color: colors.white,
-    fontSize: "0.95rem",
-    outline: "none",
-  },
-  sendBtn: {
-    backgroundColor: colors.gold,
-    color: colors.black,
-    border: "none",
-    borderRadius: "25px",
-    padding: "0 22px",
-    fontWeight: "800",
-    fontSize: "0.9rem",
-    cursor: "pointer",
-    textTransform: "uppercase",
-    letterSpacing: "0.5px",
-  },
-  emptyState: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    color: "rgba(255,255,255,0.6)",
-    gap: "12px",
-  },
-  emptyIcon: { fontSize: "3rem" },
-  emptyText: { fontSize: "1.1rem", fontWeight: "600" },
-  emptySubtext: { fontSize: "0.85rem", color: "rgba(255,255,255,0.4)" },
-  backBtn: {
-    backgroundColor: "transparent",
-    border: `2px solid ${colors.gold}`,
-    color: colors.gold,
-    borderRadius: "6px",
-    padding: "6px 14px",
-    fontWeight: "700",
-    fontSize: "0.8rem",
-    cursor: "pointer",
-    textTransform: "uppercase",
-  },
-  // New chat panel shown when arriving from a listing before any message exists
-  newChatPanel: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    overflow: "hidden",
-  },
-  newChatPrompt: {
-    flex: 1,
-    display: "flex",
-    flexDirection: "column",
-    justifyContent: "center",
-    alignItems: "center",
-    color: "rgba(255,255,255,0.7)",
-    gap: "10px",
-    padding: "2rem",
-    textAlign: "center",
-  },
-};
-
 export default function Messages() {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const currentUser = getStoredUser();
-
-  // Passed in when navigating here via the Contact button on a listing
-  const preselect = location.state || {};
+  const navigate     = useNavigate();
+  const location     = useLocation();
+  const currentUser  = getStoredUser();
+  const preselect    = location.state || {};
+  const baseUrl      = getApiBaseUrl();
+  const pollRef      = useRef(null);
+  const bottomRef    = useRef(null);
 
   const [conversations, setConversations] = useState([]);
-  const [activeConv, setActiveConv] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [draft, setDraft] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [sending, setSending] = useState(false);
-
-  // Tracks a new chat that hasn't been sent yet (no DB row yet)
-  const [pendingChat, setPendingChat] = useState(null);
-
-  const bottomRef = useRef(null);
-  const pollRef = useRef(null);
-  const baseUrl = getApiBaseUrl();
+  const [activeConv, setActiveConv]       = useState(null);
+  const [messages, setMessages]           = useState([]);
+  const [draft, setDraft]                 = useState("");
+  const [loading, setLoading]             = useState(true);
+  const [sending, setSending]             = useState(false);
+  const [pendingChat, setPendingChat]     = useState(null);
 
   useEffect(() => {
-    if (!currentUser) navigate("/login");
-  }, []);
-
-  // On mount: load conversations from DB, then handle preselect with fresh data
-  useEffect(() => {
-    if (!currentUser) return;
-
     async function init() {
       try {
-        const res = await fetch(
-          `${baseUrl}/api/messages/conversations?userId=${currentUser.id}`
-        );
+        const res  = await fetch(`${baseUrl}/api/messages/conversations?userId=${currentUser.id}`);
         const data = await res.json();
-        const convList = Array.isArray(data) ? data : [];
-        setConversations(convList);
+        const list = Array.isArray(data) ? data : [];
+        setConversations(list);
 
-        if (preselect.receiverId && preselect.listingId) {
-          const existing = convList.find(
-            (c) =>
-              c.other_user_id === preselect.receiverId &&
-              c.listing_id === preselect.listingId
+        if (preselect.receiverId) {
+          const existing = list.find(
+            (c) => c.other_user_id === preselect.receiverId && c.listing_id === preselect.listingId
           );
-
           if (existing) {
-            // Conversation already exists in DB — open it normally
             setActiveConv(existing);
-            setPendingChat(null);
             loadMessages(existing.other_user_id, existing.listing_id);
             markRead(existing.other_user_id, existing.listing_id);
           } else {
-            // No messages yet — hold as a pending (unsaved) chat
-            // Do NOT add it to the sidebar until first message is sent
             setPendingChat({
               other_user_id: preselect.receiverId,
               other_user_name: preselect.receiverName || "Seller",
               listing_id: preselect.listingId,
-              book_title: preselect.bookTitle || "Book",
+              book_title: preselect.bookTitle || "",
             });
             setActiveConv(null);
             setMessages([]);
@@ -309,7 +68,6 @@ export default function Messages() {
         setLoading(false);
       }
     }
-
     init();
   }, []);
 
@@ -323,14 +81,10 @@ export default function Messages() {
 
   async function loadMessages(otherUserId, listingId) {
     try {
-      const res = await fetch(
-        `${baseUrl}/api/messages?userId=${currentUser.id}&otherUserId=${otherUserId}&listingId=${listingId}`
-      );
+      const res  = await fetch(`${baseUrl}/api/messages?userId=${currentUser.id}&otherUserId=${otherUserId}&listingId=${listingId}`);
       const data = await res.json();
       setMessages(Array.isArray(data) ? data : []);
-    } catch (err) {
-      console.error("Failed to load messages:", err);
-    }
+    } catch (err) { console.error("Failed to load messages:", err); }
   }
 
   async function markRead(otherUserId, listingId) {
@@ -342,25 +96,20 @@ export default function Messages() {
       });
       setConversations((prev) =>
         prev.map((c) =>
-          c.other_user_id === otherUserId && c.listing_id === listingId
-            ? { ...c, unread_count: 0 }
-            : c
+          c.other_user_id === otherUserId && c.listing_id === listingId ? { ...c, unread_count: 0 } : c
         )
       );
-    } catch (_) {}
+    } catch {}
   }
 
   async function refreshConversations() {
     try {
-      const res = await fetch(
-        `${baseUrl}/api/messages/conversations?userId=${currentUser.id}`
-      );
+      const res  = await fetch(`${baseUrl}/api/messages/conversations?userId=${currentUser.id}`);
       const data = await res.json();
       if (Array.isArray(data)) setConversations(data);
-    } catch (_) {}
+    } catch {}
   }
 
-  // Poll for new messages every 5 seconds while a real conversation is open
   useEffect(() => {
     if (!activeConv) return;
     pollRef.current = setInterval(() => {
@@ -373,7 +122,6 @@ export default function Messages() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
-  // The active target is either an existing conversation or the pending new chat
   const chatTarget = activeConv || pendingChat;
 
   async function sendMessage() {
@@ -394,23 +142,13 @@ export default function Messages() {
       if (!res.ok) throw new Error("Send failed");
       setDraft("");
 
-      // If this was a pending chat, promote it to a real conversation
       if (pendingChat) {
         setPendingChat(null);
-        // Refresh sidebar — the new conversation now exists in DB
-        const convRes = await fetch(
-          `${baseUrl}/api/messages/conversations?userId=${currentUser.id}`
-        );
+        const convRes  = await fetch(`${baseUrl}/api/messages/conversations?userId=${currentUser.id}`);
         const convData = await convRes.json();
         const convList = Array.isArray(convData) ? convData : [];
         setConversations(convList);
-
-        // Find and activate the newly created conversation
-        const newConv = convList.find(
-          (c) =>
-            c.other_user_id === chatTarget.other_user_id &&
-            c.listing_id === chatTarget.listing_id
-        );
+        const newConv  = convList.find((c) => c.other_user_id === chatTarget.other_user_id && c.listing_id === chatTarget.listing_id);
         if (newConv) setActiveConv(newConv);
       }
 
@@ -424,133 +162,379 @@ export default function Messages() {
   }
 
   function handleKeyDown(e) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
   }
 
   if (!currentUser) return null;
 
   return (
-    <div style={styles.wrapper}>
-      {/* Sidebar */}
-      <aside style={styles.sidebar}>
-        <div style={styles.sidebarHeader}>
-          <span>Messages</span>
-          {/* <button style={styles.backBtn} onClick={() => navigate("/booklistings")}>
-            ← Listings
-          </button> */}
-        </div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+        *, *::before, *::after { box-sizing: border-box; }
 
-        {loading ? (
-          <div style={{ padding: "1rem", color: colors.midGray, fontSize: "0.9rem" }}>
-            Loading...
-          </div>
-        ) : conversations.length === 0 && !pendingChat ? (
-          <div style={{ padding: "1.2rem", color: colors.midGray, fontSize: "0.9rem" }}>
-            No conversations yet. Click <strong>Contact</strong> on a listing to start one.
-          </div>
-        ) : (
-          conversations.map((conv) => (
-            <div
-              key={`${conv.other_user_id}-${conv.listing_id}`}
-              style={styles.convItem(
+        .msg-wrapper {
+          display: flex;
+          height: calc(100vh - 64px);
+          width: 100vw;
+          overflow: hidden;
+          font-family: 'DM Sans', sans-serif;
+          position: relative;
+          background:
+            linear-gradient(rgba(0,0,0,0.72), rgba(0,0,0,0.72)),
+            url('https://images.unsplash.com/photo-1481627834876-b7833e8f5570?q=80&w=2128&auto=format&fit=crop') center/cover no-repeat fixed;
+        }
+        .msg-wrapper::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background-image:
+            linear-gradient(rgba(255,189,0,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,189,0,0.04) 1px, transparent 1px);
+          background-size: 60px 60px;
+        }
+
+        /* ── Sidebar ── */
+        .msg-sidebar {
+          position: relative;
+          z-index: 1;
+          width: 300px;
+          min-width: 240px;
+          display: flex;
+          flex-direction: column;
+          background: #fff;
+          border-right: 3px solid #FFBD00;
+          overflow-y: auto;
+          box-shadow: 4px 0 20px rgba(0,0,0,0.3);
+          flex-shrink: 0;
+        }
+
+        .sidebar-header {
+          background: #0a0a0a;
+          padding: 18px 20px;
+          border-bottom: 3px solid #FFBD00;
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 22px;
+          letter-spacing: 2px;
+          color: #FFBD00;
+          flex-shrink: 0;
+        }
+
+        .conv-item {
+          padding: 14px 16px;
+          border-bottom: 1px solid #f5f5f5;
+          cursor: pointer;
+          border-left: 3px solid transparent;
+          transition: background 0.15s, border-color 0.15s;
+        }
+        .conv-item:hover   { background: #fffbea; }
+        .conv-item.active  { background: #fffbea; border-left-color: #FFBD00; }
+
+        .conv-name {
+          font-weight: 700;
+          font-size: 13px;
+          color: #0a0a0a;
+        }
+        .conv-meta {
+          font-size: 11px;
+          color: #aaa;
+          margin-top: 2px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+        }
+        .conv-book-badge {
+          display: inline-block;
+          background: #0a0a0a;
+          color: #FFBD00;
+          font-size: 0.6rem;
+          font-weight: 700;
+          padding: 2px 8px;
+          border-radius: 20px;
+          margin-top: 5px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+        .conv-row { display: flex; justify-content: space-between; align-items: flex-start; }
+        .conv-time { font-size: 11px; color: #bbb; }
+        .unread-dot {
+          width: 8px; height: 8px;
+          border-radius: 50%;
+          background: #FFBD00;
+          flex-shrink: 0;
+          margin-top: 3px;
+        }
+
+        .sidebar-empty {
+          padding: 16px;
+          color: #bbb;
+          font-size: 12px;
+          line-height: 1.6;
+        }
+
+        /* ── Chat panel ── */
+        .msg-chat-panel {
+          position: relative;
+          z-index: 1;
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          overflow: hidden;
+        }
+
+        .chat-header {
+          background: rgba(10,10,10,0.92);
+          backdrop-filter: blur(8px);
+          padding: 14px 20px;
+          border-bottom: 3px solid #FFBD00;
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          flex-shrink: 0;
+        }
+        .chat-header-name {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 22px;
+          letter-spacing: 1.5px;
+          color: #fff;
+        }
+        .chat-header-book {
+          background: #FFBD00;
+          color: #0a0a0a;
+          font-size: 0.65rem;
+          font-weight: 700;
+          padding: 3px 11px;
+          border-radius: 20px;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+        }
+
+        .chat-messages {
+          flex: 1;
+          overflow-y: auto;
+          padding: 1.5rem;
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+        }
+
+        .bubble-wrap { display: flex; flex-direction: column; }
+        .bubble-mine {
+          max-width: 65%;
+          align-self: flex-end;
+          background: #0a0a0a;
+          color: #FFBD00;
+          padding: 10px 15px;
+          border-radius: 18px 18px 4px 18px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+          word-break: break-word;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+        .bubble-theirs {
+          max-width: 65%;
+          align-self: flex-start;
+          background: #fff;
+          color: #0a0a0a;
+          padding: 10px 15px;
+          border-radius: 18px 18px 18px 4px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.15);
+          word-break: break-word;
+          font-size: 13px;
+          line-height: 1.5;
+        }
+        .bubble-time-mine   { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 3px; text-align: right; }
+        .bubble-time-theirs { font-size: 10px; color: #bbb; margin-top: 3px; text-align: left; }
+
+        .chat-empty {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          color: rgba(255,255,255,0.35);
+          gap: 10px;
+          padding: 2rem;
+          text-align: center;
+        }
+        .chat-empty-icon { font-size: 3rem; }
+        .chat-empty-text {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 26px;
+          letter-spacing: 2px;
+          color: rgba(255,255,255,0.4);
+        }
+        .chat-empty-sub { font-size: 12px; color: rgba(255,255,255,0.25); }
+
+        .chat-pending-prompt {
+          flex: 1;
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          justify-content: center;
+          color: rgba(255,255,255,0.5);
+          gap: 8px;
+          padding: 2rem;
+          text-align: center;
+        }
+        .chat-pending-icon { font-size: 2.5rem; }
+        .chat-pending-text {
+          font-weight: 700;
+          font-size: 14px;
+          color: rgba(255,255,255,0.7);
+        }
+        .chat-pending-sub { font-size: 12px; color: rgba(255,255,255,0.3); }
+
+        /* Input bar */
+        .chat-input-bar {
+          display: flex;
+          gap: 10px;
+          padding: 14px 20px;
+          background: rgba(10,10,10,0.92);
+          backdrop-filter: blur(8px);
+          border-top: 3px solid #FFBD00;
+          flex-shrink: 0;
+        }
+        .chat-text-input {
+          flex: 1;
+          padding: 11px 16px;
+          border-radius: 25px;
+          border: 1.5px solid rgba(255,189,0,0.2);
+          background: rgba(255,255,255,0.06);
+          color: #fff;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          outline: none;
+          transition: border-color 0.2s, background 0.2s;
+        }
+        .chat-text-input::placeholder { color: rgba(255,255,255,0.3); }
+        .chat-text-input:focus {
+          border-color: #FFBD00;
+          background: rgba(255,189,0,0.06);
+        }
+
+        .chat-send-btn {
+          background: #FFBD00;
+          color: #0a0a0a;
+          border: none;
+          border-radius: 25px;
+          padding: 0 22px;
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 16px;
+          letter-spacing: 1.5px;
+          cursor: pointer;
+          transition: background 0.15s, transform 0.15s;
+          flex-shrink: 0;
+        }
+        .chat-send-btn:hover:not(:disabled) { background: #e6a800; transform: translateY(-1px); }
+        .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        /* No-message hint */
+        .no-msgs-hint {
+          color: rgba(255,255,255,0.25);
+          text-align: center;
+          margin-top: 2rem;
+          font-size: 12px;
+        }
+      `}</style>
+
+      <div className="msg-wrapper">
+
+        {/* Sidebar */}
+        <aside className="msg-sidebar">
+          <div className="sidebar-header">Messages</div>
+
+          {loading ? (
+            <div className="sidebar-empty">Loading…</div>
+          ) : conversations.length === 0 && !pendingChat ? (
+            <div className="sidebar-empty">
+              No conversations yet. Click <strong>Contact</strong> on a listing to start one.
+            </div>
+          ) : (
+            conversations.map((conv) => {
+              const isActive =
                 activeConv?.other_user_id === conv.other_user_id &&
-                  activeConv?.listing_id === conv.listing_id
-              )}
-              onClick={() => selectConversation(conv)}
-            >
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
-                <div style={styles.convName}>{conv.other_user_name}</div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  {conv.unread_count > 0 && <div style={styles.unreadDot} />}
-                  <span style={{ fontSize: "0.72rem", color: colors.midGray }}>
-                    {formatTime(conv.last_sent_at)}
-                  </span>
+                activeConv?.listing_id === conv.listing_id;
+              return (
+                <div
+                  key={`${conv.other_user_id}-${conv.listing_id}`}
+                  className={`conv-item${isActive ? " active" : ""}`}
+                  onClick={() => selectConversation(conv)}
+                >
+                  <div className="conv-row">
+                    <div className="conv-name">{conv.other_user_name}</div>
+                    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                      {conv.unread_count > 0 && <div className="unread-dot" />}
+                      <span className="conv-time">{formatTime(conv.last_sent_at)}</span>
+                    </div>
+                  </div>
+                  <div className="conv-book-badge">{conv.book_title}</div>
+                  {conv.last_message && <div className="conv-meta">{conv.last_message}</div>}
                 </div>
+              );
+            })
+          )}
+        </aside>
+
+        {/* Chat panel */}
+        <div className="msg-chat-panel">
+          {!chatTarget ? (
+            <div className="chat-empty">
+              <div className="chat-empty-icon">💬</div>
+              <div className="chat-empty-text">Select a Conversation</div>
+              <div className="chat-empty-sub">Or click "Contact" on a listing to start one</div>
+            </div>
+          ) : (
+            <>
+              <div className="chat-header">
+                <div className="chat-header-name">{chatTarget.other_user_name}</div>
+                <div className="chat-header-book">{chatTarget.book_title}</div>
               </div>
-              <div style={styles.convBook}>{conv.book_title}</div>
-              {conv.last_message && (
-                <div style={styles.convMeta}>{conv.last_message}</div>
-              )}
-            </div>
-          ))
-        )}
-      </aside>
 
-      {/* Chat Panel */}
-      <div style={styles.chatPanel}>
-        {!chatTarget ? (
-          <div style={styles.emptyState}>
-            <div style={styles.emptyIcon}>💬</div>
-            <div style={styles.emptyText}>Select a conversation</div>
-            <div style={styles.emptySubtext}>
-              Or go to a listing and click "Contact"
-            </div>
-          </div>
-        ) : (
-          <>
-            <div style={styles.chatHeader}>
-              <div style={styles.chatHeaderName}>{chatTarget.other_user_name}</div>
-              <div style={styles.chatHeaderBook}>{chatTarget.book_title}</div>
-            </div>
-
-            <div style={styles.messagesArea}>
-              {/* Prompt shown before the very first message is sent */}
-              {pendingChat && messages.length === 0 && (
-                <div style={styles.newChatPrompt}>
-                  <div style={{ fontSize: "2rem" }}>👋</div>
-                  <div style={{ fontWeight: "700", fontSize: "1rem" }}>
-                    Start a conversation with {pendingChat.other_user_name}
+              <div className="chat-messages">
+                {pendingChat && messages.length === 0 && (
+                  <div className="chat-pending-prompt">
+                    <div className="chat-pending-icon">👋</div>
+                    <div className="chat-pending-text">Start a conversation with {pendingChat.other_user_name}</div>
+                    <div className="chat-pending-sub">Ask about <em>{pendingChat.book_title}</em> below</div>
                   </div>
-                  <div style={{ fontSize: "0.85rem", color: "rgba(255,255,255,0.45)" }}>
-                    Ask about <em>{pendingChat.book_title}</em> below
-                  </div>
-                </div>
-              )}
+                )}
+                {!pendingChat && messages.length === 0 && (
+                  <div className="no-msgs-hint">No messages yet — say hi!</div>
+                )}
+                {messages.map((msg) => {
+                  const isMine = msg.sender_id === currentUser.id;
+                  return (
+                    <div key={msg.message_id} className="bubble-wrap">
+                      <div className={isMine ? "bubble-mine" : "bubble-theirs"}>{msg.content}</div>
+                      <div className={isMine ? "bubble-time-mine" : "bubble-time-theirs"}>{formatTime(msg.sent_at)}</div>
+                    </div>
+                  );
+                })}
+                <div ref={bottomRef} />
+              </div>
 
-              {!pendingChat && messages.length === 0 && (
-                <div style={{ color: "rgba(255,255,255,0.4)", textAlign: "center", marginTop: "2rem", fontSize: "0.9rem" }}>
-                  No messages yet — say hi!
-                </div>
-              )}
-
-              {messages.map((msg) => {
-                const isMine = msg.sender_id === currentUser.id;
-                return (
-                  <div key={msg.message_id} style={{ display: "flex", flexDirection: "column" }}>
-                    <div style={styles.bubble(isMine)}>{msg.content}</div>
-                    <div style={styles.bubbleTime(isMine)}>{formatTime(msg.sent_at)}</div>
-                  </div>
-                );
-              })}
-              <div ref={bottomRef} />
-            </div>
-
-            <div style={styles.inputBar}>
-              <input
-                style={styles.textInput}
-                placeholder="Type a message… (Enter to send)"
-                value={draft}
-                onChange={(e) => setDraft(e.target.value)}
-                onKeyDown={handleKeyDown}
-              />
-              <button
-                style={{
-                  ...styles.sendBtn,
-                  opacity: sending || !draft.trim() ? 0.5 : 1,
-                  cursor: sending || !draft.trim() ? "not-allowed" : "pointer",
-                }}
-                onClick={sendMessage}
-                disabled={sending || !draft.trim()}
-              >
-                Send
-              </button>
-            </div>
-          </>
-        )}
+              <div className="chat-input-bar">
+                <input
+                  className="chat-text-input"
+                  placeholder="Type a message… (Enter to send)"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={handleKeyDown}
+                />
+                <button
+                  className="chat-send-btn"
+                  onClick={sendMessage}
+                  disabled={sending || !draft.trim()}
+                >
+                  Send
+                </button>
+              </div>
+            </>
+          )}
+        </div>
       </div>
-    </div>
+    </>
   );
 }

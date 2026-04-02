@@ -5,24 +5,13 @@ import { getApiBaseUrl } from "./apiBaseUrl";
 function BookListings() {
   const navigate = useNavigate();
 
-  const [books, setBooks] = useState([]);
-  const [loading, setLoading] = useState(true);
-
+  const [books, setBooks]         = useState([]);
+  const [loading, setLoading]     = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
-  // NEW: State to track which specific field we are searching
-  const [searchBy, setSearchBy] = useState("All"); 
-  
-  const [category, setCategory] = useState("All");
+  const [searchBy, setSearchBy]   = useState("All");
+  const [category, setCategory]   = useState("All");
   const [sortOrder, setSortOrder] = useState("");
-  const [typeFilter, setTypeFilter] = useState("All"); 
-
-  const colors = {
-    gold: "#FFBD00",
-    black: "#000000",
-    white: "#FFFFFF",
-    darkGray: "#333333",
-    lightGray: "#F4F4F4",
-  };
+  const [typeFilter, setTypeFilter] = useState("All");
 
   useEffect(() => {
     const fetchListings = async () => {
@@ -45,45 +34,28 @@ function BookListings() {
         setLoading(false);
       }
     };
-
     fetchListings();
   }, []);
 
-  // UPDATED: Targeted Search Logic
   let processedBooks = books.filter((book) => {
     const searchLower = searchTerm.toLowerCase();
-    
-    const title = (book.title || "").toLowerCase();
-    const course = (book.course_code || "").toLowerCase();
-    const author = (book.author || "").toLowerCase();
-    const isbn = (book.isbn || "").toLowerCase();
+    const title       = (book.title || "").toLowerCase();
+    const course      = (book.course_code || "").toLowerCase();
+    const author      = (book.author || "").toLowerCase();
+    const isbn        = (book.isbn || "").toLowerCase();
     const description = (book.description || "").toLowerCase();
 
-    let matchesSearch = true; // Default to true if search box is empty
-
-    // Only run the search check if they actually typed something
+    let matchesSearch = true;
     if (searchTerm.trim() !== "") {
-      if (searchBy === "All") {
-        matchesSearch =
-          title.includes(searchLower) ||
-          course.includes(searchLower) ||
-          author.includes(searchLower) ||
-          isbn.includes(searchLower) ||
-          description.includes(searchLower);
-      } else if (searchBy === "Title") {
-        matchesSearch = title.includes(searchLower);
-      } else if (searchBy === "Author") {
-        matchesSearch = author.includes(searchLower);
-      } else if (searchBy === "Course") {
-        matchesSearch = course.includes(searchLower);
-      } else if (searchBy === "ISBN") {
-        matchesSearch = isbn.includes(searchLower);
-      }
+      if      (searchBy === "All")    matchesSearch = title.includes(searchLower) || course.includes(searchLower) || author.includes(searchLower) || isbn.includes(searchLower) || description.includes(searchLower);
+      else if (searchBy === "Title")  matchesSearch = title.includes(searchLower);
+      else if (searchBy === "Author") matchesSearch = author.includes(searchLower);
+      else if (searchBy === "Course") matchesSearch = course.includes(searchLower);
+      else if (searchBy === "ISBN")   matchesSearch = isbn.includes(searchLower);
     }
 
     const matchesCategory = category === "All" || course.includes(category.toLowerCase());
-
-    const matchesType =
+    const matchesType     =
       typeFilter === "All" ||
       (typeFilter === "Books" && book._type === "book") ||
       (typeFilter === "Notes" && book._type === "notes");
@@ -91,192 +63,13 @@ function BookListings() {
     return matchesSearch && matchesCategory && matchesType;
   });
 
-  if (sortOrder === "lowToHigh") {
-    processedBooks.sort((a, b) => a.price - b.price);
-  } else if (sortOrder === "highToLow") {
-    processedBooks.sort((a, b) => b.price - a.price);
-  }
-
-  const styles = {
-    wrapper: {
-      minHeight: "calc(100vh - 76px)",
-      width: "100vw",
-      margin: 0,
-      fontFamily: "'Inter', 'Segoe UI', Roboto, sans-serif",
-      backgroundImage:
-        'linear-gradient(rgba(0, 0, 0, 0.7), rgba(0, 0, 0, 0.7)), url("https://images.unsplash.com/photo-1523240795612-9a054b0db644?q=80&w=2070&auto=format&fit=crop")',
-      backgroundSize: "cover",
-      backgroundPosition: "center",
-      backgroundAttachment: "fixed",
-      display: "flex",
-      flexDirection: "column",
-    },
-    container: {
-      display: "flex",
-      flexWrap: "wrap",
-      padding: "2rem",
-      maxWidth: "1200px",
-      margin: "0 auto",
-      width: "100%",
-      gap: "2rem",
-      boxSizing: "border-box",
-    },
-    sidebar: {
-      flex: "1 1 250px",
-      backgroundColor: colors.white,
-      padding: "1.5rem",
-      borderRadius: "12px",
-      height: "fit-content",
-      boxShadow: "0 10px 25px rgba(0,0,0,0.2)",
-      borderTop: `6px solid ${colors.gold}`,
-    },
-    sidebarTitle: {
-      fontSize: "1.2rem",
-      fontWeight: "800",
-      marginBottom: "1rem",
-      borderBottom: `2px solid ${colors.lightGray}`,
-      paddingBottom: "0.5rem",
-    },
-    grid: {
-      flex: "3 1 600px",
-      display: "grid",
-      gridTemplateColumns: "repeat(auto-fill, minmax(240px, 1fr))",
-      gap: "1.5rem",
-    },
-    card: {
-      backgroundColor: colors.white,
-      borderRadius: "10px",
-      overflow: "hidden",
-      boxShadow: "0 5px 15px rgba(0,0,0,0.2)",
-      transition: "transform 0.2s ease",
-      display: "flex",
-      flexDirection: "column",
-    },
-    cardImage: {
-      width: "100%",
-      height: "160px",
-      objectFit: "cover",
-      borderBottom: `4px solid ${colors.gold}`,
-    },
-    cardContent: {
-      padding: "1rem",
-      display: "flex",
-      flexDirection: "column",
-      flexGrow: 1,
-    },
-    courseBadge: {
-      backgroundColor: colors.black,
-      color: colors.gold,
-      fontSize: "0.7rem",
-      fontWeight: "700",
-      padding: "4px 8px",
-      borderRadius: "4px",
-      alignSelf: "flex-start",
-      marginBottom: "0.5rem",
-      textTransform: "uppercase",
-    },
-    notesBadge: {
-      backgroundColor: colors.gold,
-      color: colors.black,
-      fontSize: "0.7rem",
-      fontWeight: "700",
-      padding: "4px 8px",
-      borderRadius: "4px",
-      alignSelf: "flex-start",
-      marginBottom: "0.5rem",
-      textTransform: "uppercase",
-    },
-    bookTitle: {
-      fontSize: "1.1rem",
-      fontWeight: "700",
-      color: colors.darkGray,
-      marginBottom: "0.3rem",
-      lineHeight: "1.3",
-    },
-    bookAuthor: {
-      fontSize: "0.9rem",
-      color: "#666",
-      marginBottom: "1rem",
-    },
-    cardFooter: {
-      marginTop: "auto",
-      display: "flex",
-      justifyContent: "space-between",
-      alignItems: "center",
-      borderTop: `1px solid ${colors.lightGray}`,
-      paddingTop: "0.8rem",
-      gap: "8px",
-    },
-    price: {
-      fontSize: "1.2rem",
-      fontWeight: "800",
-      color: colors.black,
-    },
-    buttonGroup: {
-      display: "flex",
-      gap: "6px",
-    },
-    buyButton: {
-      backgroundColor: colors.gold,
-      color: colors.black,
-      border: "none",
-      padding: "8px 14px",
-      borderRadius: "20px",
-      fontWeight: "700",
-      fontSize: "0.8rem",
-      cursor: "pointer",
-      boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-    },
-    contactButton: {
-      backgroundColor: colors.black,
-      color: colors.gold,
-      border: "none",
-      padding: "8px 14px",
-      borderRadius: "20px",
-      fontWeight: "700",
-      fontSize: "0.8rem",
-      cursor: "pointer",
-      boxShadow: "0 2px 5px rgba(0,0,0,0.1)",
-    },
-    input: {
-      width: "100%",
-      padding: "10px",
-      borderRadius: "6px",
-      border: "2px solid #eee",
-      marginBottom: "0.5rem", // Tightened to fit radio buttons below
-      fontSize: "0.95rem",
-      boxSizing: "border-box",
-    },
-    label: {
-      display: "block",
-      fontSize: "0.85rem",
-      fontWeight: "700",
-      marginBottom: "6px",
-      color: colors.darkGray,
-    },
-    radioGroup: {
-      display: "flex",
-      flexWrap: "wrap", // Allows buttons to flow to next line if needed
-      gap: "10px",
-      marginBottom: "1.5rem",
-      marginTop: "0.2rem",
-    },
-    radioLabel: {
-      fontSize: "0.85rem",
-      color: colors.darkGray,
-      display: "flex",
-      alignItems: "center",
-      gap: "4px",
-      cursor: "pointer",
-    },
-  };
+  if (sortOrder === "lowToHigh")  processedBooks.sort((a, b) => a.price - b.price);
+  else if (sortOrder === "highToLow") processedBooks.sort((a, b) => b.price - a.price);
 
   function handleContact(book) {
     const stored = localStorage.getItem("bookExchangeUser");
     const currentUser = stored ? JSON.parse(stored) : null;
-
     if (currentUser && currentUser.id === book.user_id) return;
-
     navigate("/messages", {
       state: {
         receiverId: book.user_id,
@@ -288,205 +81,448 @@ function BookListings() {
   }
 
   return (
-    <div style={styles.wrapper}>
-      <div style={styles.container}>
-        <aside style={styles.sidebar}>
-          <div style={styles.sidebarTitle}>Filters</div>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+        *, *::before, *::after { box-sizing: border-box; }
 
-          <label style={styles.label}>Search</label>
-          <input
-            style={styles.input}
-            placeholder={`Search by ${searchBy === "All" ? "keywords" : searchBy.toLowerCase()}...`}
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            onFocus={(e) => (e.target.style.borderColor = colors.gold)}
-            onBlur={(e) => (e.target.style.borderColor = "#eee")}
-          />
+        .listings-page {
+          min-height: calc(100vh - 64px);
+          width: 100vw;
+          font-family: 'DM Sans', sans-serif;
+          position: relative;
+          background:
+            linear-gradient(rgba(0,0,0,0.72), rgba(0,0,0,0.72)),
+            url('https://images.unsplash.com/photo-1481627834876-b7833e8f5570?q=80&w=2128&auto=format&fit=crop') center/cover no-repeat fixed;
+        }
+        .listings-page::before {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background:
+            radial-gradient(ellipse 60% 50% at 10% 60%, rgba(255,189,0,0.06) 0%, transparent 60%),
+            radial-gradient(ellipse 40% 60% at 85% 25%, rgba(255,189,0,0.04) 0%, transparent 50%);
+        }
+        .listings-page::after {
+          content: '';
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          background-image:
+            linear-gradient(rgba(255,189,0,0.04) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,189,0,0.04) 1px, transparent 1px);
+          background-size: 60px 60px;
+        }
 
-          {/* NEW: Search By Radio Buttons */}
-          <div style={styles.radioGroup}>
-            {["All", "Title", "Author", "Course", "ISBN"].map((option) => (
-              <label key={option} style={styles.radioLabel}>
-                <input
-                  type="radio"
-                  name="searchBy"
-                  value={option}
-                  checked={searchBy === option}
-                  onChange={(e) => setSearchBy(e.target.value)}
-                />
-                {option}
-              </label>
-            ))}
-          </div>
+        .listings-container {
+          position: relative;
+          z-index: 1;
+          display: flex;
+          flex-wrap: wrap;
+          padding: 2rem;
+          max-width: 1240px;
+          margin: 0 auto;
+          gap: 1.75rem;
+        }
 
-          <label style={styles.label}>Listing Type</label>
-          <div style={styles.radioGroup}>
-            <label style={styles.radioLabel}>
-              <input
-                type="radio"
-                name="typeFilter"
-                value="All"
-                checked={typeFilter === "All"}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              />
-              All
-            </label>
-            <label style={styles.radioLabel}>
-              <input
-                type="radio"
-                name="typeFilter"
-                value="Books"
-                checked={typeFilter === "Books"}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              />
-              Books
-            </label>
-            <label style={styles.radioLabel}>
-              <input
-                type="radio"
-                name="typeFilter"
-                value="Notes"
-                checked={typeFilter === "Notes"}
-                onChange={(e) => setTypeFilter(e.target.value)}
-              />
-              Notes
-            </label>
-          </div>
+        /* ── Sidebar ── */
+        .listings-sidebar {
+          flex: 1 1 240px;
+          background: #fff;
+          border-radius: 16px;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,189,0,0.1);
+          overflow: hidden;
+          height: fit-content;
+        }
+        .sidebar-header {
+          background: #0a0a0a;
+          padding: 18px 20px;
+          border-bottom: 3px solid #FFBD00;
+        }
+        .sidebar-title {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 22px;
+          letter-spacing: 2px;
+          color: #FFBD00;
+        }
+        .sidebar-body {
+          padding: 20px;
+        }
 
-          <label style={styles.label}>Department</label>
-          <select
-            style={styles.input}
-            value={category}
-            onChange={(e) => setCategory(e.target.value)}
-            onFocus={(e) => (e.target.style.borderColor = colors.gold)}
-            onBlur={(e) => (e.target.style.borderColor = "#eee")}
-          >
-            <option value="All">All Departments</option>
-            <option value="Math">Mathematics</option>
-            <option value="CompSci">Computer Science</option>
-            <option value="Psych">Psychology</option>
-            <option value="Chem">Chemistry</option>
-            <option value="Art">Arts & Humanities</option>
-          </select>
+        .filter-label {
+          display: block;
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 2px;
+          text-transform: uppercase;
+          color: #666;
+          margin-bottom: 6px;
+        }
+        .filter-input {
+          width: 100%;
+          padding: 9px 12px;
+          border: 1.5px solid #e8e8e8;
+          border-radius: 8px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          color: #0a0a0a;
+          background: #fafafa;
+          outline: none;
+          margin-bottom: 14px;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .filter-input:focus {
+          border-color: #FFBD00;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
+        }
 
-          <label style={styles.label}>Sort by Price</label>
-          <select
-            style={styles.input}
-            value={sortOrder}
-            onChange={(e) => setSortOrder(e.target.value)}
-            onFocus={(e) => (e.target.style.borderColor = colors.gold)}
-            onBlur={(e) => (e.target.style.borderColor = "#eee")}
-          >
-            <option value="">Relevance (Default)</option>
-            <option value="lowToHigh">Price: Low to High</option>
-            <option value="highToLow">Price: High to Low</option>
-          </select>
-        </aside>
+        .radio-group {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          margin-bottom: 18px;
+        }
+        .radio-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 5px;
+          font-size: 12px;
+          font-weight: 600;
+          color: #555;
+          cursor: pointer;
+          padding: 4px 10px;
+          border-radius: 20px;
+          border: 1.5px solid #e8e8e8;
+          background: #fafafa;
+          transition: all 0.15s;
+          white-space: nowrap;
+        }
+        .radio-chip input { display: none; }
+        .radio-chip:has(input:checked) {
+          background: #0a0a0a;
+          color: #FFBD00;
+          border-color: #0a0a0a;
+        }
+        .radio-chip:hover:not(:has(input:checked)) {
+          border-color: #FFBD00;
+          color: #0a0a0a;
+        }
 
-        <main style={styles.grid}>
-          {loading ? (
-            <div
-              style={{
-                color: colors.white,
-                gridColumn: "1 / -1",
-                textAlign: "center",
-              }}
-            >
-              <h3>Loading books from database...</h3>
+        .filter-divider {
+          height: 1px;
+          background: #f0f0f0;
+          margin: 4px 0 16px;
+        }
+
+        /* ── Grid ── */
+        .listings-grid {
+          flex: 3 1 600px;
+          display: grid;
+          grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+          gap: 1.25rem;
+          align-content: start;
+        }
+
+        .book-card {
+          background: #fff;
+          border-radius: 14px;
+          overflow: hidden;
+          box-shadow: 0 10px 35px rgba(0,0,0,0.4);
+          display: flex;
+          flex-direction: column;
+          transition: transform 0.2s, box-shadow 0.2s;
+          cursor: default;
+        }
+        .book-card:hover {
+          transform: translateY(-6px);
+          box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+        }
+
+        .book-card-img {
+          width: 100%;
+          height: 160px;
+          object-fit: cover;
+          border-bottom: 3px solid #FFBD00;
+        }
+        .book-card-img-notes {
+          width: 100%;
+          height: 160px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: linear-gradient(135deg, #1a1a1a, #0a0a0a);
+          border-bottom: 3px solid #FFBD00;
+          font-size: 3rem;
+        }
+
+        .book-card-body {
+          padding: 14px;
+          display: flex;
+          flex-direction: column;
+          flex-grow: 1;
+        }
+
+        .badge-course {
+          display: inline-block;
+          background: #0a0a0a;
+          color: #FFBD00;
+          font-size: 0.65rem;
+          font-weight: 700;
+          padding: 3px 9px;
+          border-radius: 20px;
+          align-self: flex-start;
+          margin-bottom: 8px;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+        }
+        .badge-notes {
+          display: inline-block;
+          background: #FFBD00;
+          color: #0a0a0a;
+          font-size: 0.65rem;
+          font-weight: 700;
+          padding: 3px 9px;
+          border-radius: 20px;
+          align-self: flex-start;
+          margin-bottom: 8px;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+        }
+
+        .book-title {
+          font-family: 'DM Sans', sans-serif;
+          font-size: 1rem;
+          font-weight: 700;
+          color: #0a0a0a;
+          margin-bottom: 3px;
+          line-height: 1.3;
+        }
+        .book-author {
+          font-size: 0.85rem;
+          color: #777;
+          margin-bottom: 10px;
+        }
+        .book-description {
+          font-size: 0.82rem;
+          color: #999;
+          margin-bottom: 8px;
+          line-height: 1.5;
+        }
+
+        .card-footer {
+          margin-top: auto;
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          border-top: 1px solid #f0f0f0;
+          padding-top: 10px;
+          gap: 8px;
+        }
+        .card-price {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 1.3rem;
+          letter-spacing: 1px;
+          color: #0a0a0a;
+        }
+        .card-btn-group { display: flex; gap: 6px; }
+
+        .btn-primary {
+          background: #FFBD00;
+          color: #0a0a0a;
+          border: none;
+          padding: 7px 13px;
+          border-radius: 20px;
+          font-weight: 700;
+          font-size: 0.75rem;
+          cursor: pointer;
+          letter-spacing: 0.5px;
+          transition: background 0.15s, transform 0.15s;
+        }
+        .btn-primary:hover { background: #e6a800; transform: translateY(-1px); }
+
+        .btn-secondary {
+          background: #0a0a0a;
+          color: #FFBD00;
+          border: none;
+          padding: 7px 13px;
+          border-radius: 20px;
+          font-weight: 700;
+          font-size: 0.75rem;
+          cursor: pointer;
+          letter-spacing: 0.5px;
+          transition: background 0.15s, transform 0.15s;
+        }
+        .btn-secondary:hover { background: #222; transform: translateY(-1px); }
+
+        .listings-empty {
+          color: rgba(255,255,255,0.6);
+          grid-column: 1 / -1;
+          text-align: center;
+          padding: 4rem 0;
+        }
+        .listings-empty-icon { font-size: 3rem; margin-bottom: 12px; }
+        .listings-empty-text {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 28px;
+          letter-spacing: 2px;
+          color: rgba(255,255,255,0.5);
+        }
+      `}</style>
+
+      <div className="listings-page">
+        <div className="listings-container">
+
+          {/* Sidebar */}
+          <aside className="listings-sidebar">
+            <div className="sidebar-header">
+              <div className="sidebar-title">Filters</div>
             </div>
-          ) : processedBooks.length > 0 ? (
-            processedBooks.map((book) => {
-              const stored = localStorage.getItem("bookExchangeUser");
-              const currentUser = stored ? JSON.parse(stored) : null;
-              const isOwnListing = currentUser && currentUser.id === book.user_id;
-              const isNotes = book._type === "notes";
+            <div className="sidebar-body">
+              <label className="filter-label">Search</label>
+              <input
+                className="filter-input"
+                placeholder={`Search by ${searchBy === "All" ? "keywords" : searchBy.toLowerCase()}…`}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+              />
 
-              return (
-                <div
-                  key={book.listing_id}
-                  style={styles.card}
-                  onMouseOver={(e) =>
-                    (e.currentTarget.style.transform = "translateY(-5px)")
-                  }
-                  onMouseOut={(e) =>
-                    (e.currentTarget.style.transform = "translateY(0)")
-                  }
-                >
-                  {isNotes ? (
-                    <div style={{ ...styles.cardImage, display: "flex", alignItems: "center", justifyContent: "center", backgroundColor: "#f9f3e3", fontSize: "3rem" }}>
-                      📄
-                    </div>
-                  ) : (
-                    <img
-                      src={
-                        book.image_url ||
-                        "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=1000"
-                      }
-                      alt={book.title}
-                      style={styles.cardImage}
+              <label className="filter-label">Search by</label>
+              <div className="radio-group">
+                {["All", "Title", "Author", "Course", "ISBN"].map((opt) => (
+                  <label key={opt} className="radio-chip">
+                    <input
+                      type="radio"
+                      name="searchBy"
+                      value={opt}
+                      checked={searchBy === opt}
+                      onChange={(e) => setSearchBy(e.target.value)}
                     />
-                  )}
+                    {opt}
+                  </label>
+                ))}
+              </div>
 
-                  <div style={styles.cardContent}>
-                    <div style={isNotes ? styles.notesBadge : styles.courseBadge}>
-                      {isNotes ? "📄 Notes PDF" : (book.course_code || "General")}
-                    </div>
+              <div className="filter-divider" />
 
-                    <div style={styles.bookTitle}>{book.title}</div>
-                    <div style={styles.bookAuthor}>
-                      {isNotes ? (book.course_code || "") : book.author}
-                    </div>
+              <label className="filter-label">Listing Type</label>
+              <div className="radio-group">
+                {["All", "Books", "Notes"].map((opt) => (
+                  <label key={opt} className="radio-chip">
+                    <input
+                      type="radio"
+                      name="typeFilter"
+                      value={opt}
+                      checked={typeFilter === opt}
+                      onChange={(e) => setTypeFilter(e.target.value)}
+                    />
+                    {opt}
+                  </label>
+                ))}
+              </div>
 
-                    {isNotes && book.description && (
-                      <div style={{ fontSize: "0.85rem", color: "#888", marginBottom: "0.5rem" }}>
-                        {book.description}
-                      </div>
+              <div className="filter-divider" />
+
+              <label className="filter-label">Department</label>
+              <select
+                className="filter-input"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="All">All Departments</option>
+                <option value="Math">Mathematics</option>
+                <option value="CompSci">Computer Science</option>
+                <option value="Psych">Psychology</option>
+                <option value="Chem">Chemistry</option>
+                <option value="Art">Arts &amp; Humanities</option>
+              </select>
+
+              <label className="filter-label">Sort by Price</label>
+              <select
+                className="filter-input"
+                value={sortOrder}
+                onChange={(e) => setSortOrder(e.target.value)}
+              >
+                <option value="">Relevance (Default)</option>
+                <option value="lowToHigh">Price: Low to High</option>
+                <option value="highToLow">Price: High to Low</option>
+              </select>
+            </div>
+          </aside>
+
+          {/* Grid */}
+          <main className="listings-grid">
+            {loading ? (
+              <div className="listings-empty">
+                <div className="listings-empty-icon">📚</div>
+                <div className="listings-empty-text">Loading listings…</div>
+              </div>
+            ) : processedBooks.length > 0 ? (
+              processedBooks.map((book) => {
+                const stored      = localStorage.getItem("bookExchangeUser");
+                const currentUser = stored ? JSON.parse(stored) : null;
+                const isOwnListing = currentUser && currentUser.id === book.user_id;
+                const isNotes      = book._type === "notes";
+
+                return (
+                  <div key={book.listing_id} className="book-card">
+                    {isNotes ? (
+                      <div className="book-card-img-notes">📄</div>
+                    ) : (
+                      <img
+                        src={book.image_url || "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=1000"}
+                        alt={book.title}
+                        className="book-card-img"
+                      />
                     )}
 
-                    <div style={styles.cardFooter}>
-                      <div style={styles.price}>{isNotes ? "Free" : `$${book.price}`}</div>
+                    <div className="book-card-body">
+                      <div className={isNotes ? "badge-notes" : "badge-course"}>
+                        {isNotes ? "📄 Notes PDF" : (book.course_code || "General")}
+                      </div>
+                      <div className="book-title">{book.title}</div>
+                      <div className="book-author">
+                        {isNotes ? (book.course_code || "") : book.author}
+                      </div>
+                      {isNotes && book.description && (
+                        <div className="book-description">{book.description}</div>
+                      )}
 
-                      <div style={styles.buttonGroup}>
-                        {isNotes ? (
-                          <button
-                            style={styles.buyButton}
-                            onClick={() => window.open(book.pdf_url, "_blank")}
-                          >
-                            View PDF
-                          </button>
-                        ) : (
-                          <>
-                            <button style={styles.buyButton}>Details</button>
-                            {!isOwnListing && (
-                              <button
-                                style={styles.contactButton}
-                                onClick={() => handleContact(book)}
-                              >
-                                Contact
-                              </button>
-                            )}
-                          </>
-                        )}
+                      <div className="card-footer">
+                        <div className="card-price">{isNotes ? "Free" : `$${book.price}`}</div>
+                        <div className="card-btn-group">
+                          {isNotes ? (
+                            <button className="btn-primary" onClick={() => window.open(book.pdf_url, "_blank")}>
+                              View PDF
+                            </button>
+                          ) : (
+                            <>
+                              <button className="btn-primary" onClick={() => navigate(`/listings/${book.listing_id}`)}>Details</button>
+                              {!isOwnListing && (
+                                <button className="btn-secondary" onClick={() => handleContact(book)}>
+                                  Contact
+                                </button>
+                              )}
+                            </>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              );
-            })
-          ) : (
-            <div
-              style={{
-                color: colors.white,
-                gridColumn: "1 / -1",
-                textAlign: "center",
-              }}
-            >
-              <h3>No books found matching your criteria.</h3>
-            </div>
-          )}
-        </main>
+                );
+              })
+            ) : (
+              <div className="listings-empty">
+                <div className="listings-empty-icon">🔍</div>
+                <div className="listings-empty-text">No listings found</div>
+              </div>
+            )}
+          </main>
+
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
