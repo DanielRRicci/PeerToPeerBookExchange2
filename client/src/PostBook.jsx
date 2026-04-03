@@ -3,6 +3,45 @@ import { useNavigate } from "react-router-dom";
 import { getApiBaseUrl } from "./apiBaseUrl";
 import { getStoredUser } from "./auth";
 
+function fileTypeLabel(mimeType) {
+  if (!mimeType) return "File";
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType.startsWith("image/")) return "Image";
+  if (mimeType.startsWith("audio/")) return "Audio";
+  if (mimeType.startsWith("video/")) return "Video";
+  if (mimeType === "text/csv" || mimeType === "application/vnd.ms-excel") return "CSV";
+  if (mimeType === "application/vnd.ms-powerpoint" || mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return "PowerPoint";
+  return "File";
+}
+
+const ALLOWED_NOTE_TYPES = [
+  "application/pdf",
+  "application/vnd.ms-powerpoint",
+  "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "audio/mpeg",
+  "audio/wav",
+  "text/csv",
+  "application/vnd.ms-excel",
+  "video/mp4",
+  "video/quicktime",
+  
+];
+
+const ALLOWED_NOTE_ACCEPT = [
+  "application/pdf",
+  "image/jpeg,image/png,image/webp,image/gif",
+  "text/csv,.csv",
+  "audio/mpeg,audio/wav",
+  "video/mp4,video/quicktime",
+  "application/vnd.ms-powerpoint,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx",
+
+
+].join(",");
+
 function PostBook() {
   const navigate    = useNavigate();
   const fileInputRef = useRef(null);
@@ -19,8 +58,8 @@ function PostBook() {
   const [successMessage, setSuccessMessage] = useState("");
 
   const [notesData, setNotesData] = useState({ title: "", course_code: "", description: "" });
-  const [pdfFile, setPdfFile]         = useState(null);
-  const [pdfUploading, setPdfUploading] = useState(false);
+  const [noteFile, setNoteFile]         = useState(null);
+  const [noteFileUploading, setNoteFileUploading] = useState(false);
 
   useEffect(() => {
     return () => {
@@ -66,24 +105,58 @@ function PostBook() {
     });
   };
 
+  const handleNoteFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!ALLOWED_NOTE_TYPES.includes(file.type)) {
+      setError("Unsupported file type. Please upload a PDF, image, audio, video, or CSV.");
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      setError("File too large. Maximum size is 10MB.");
+      return;
+    }
+    setNoteFile(file);
+    setError("");
+  };
+
   const handleNotesSubmit = async (e) => {
     e.preventDefault();
     setError(""); setSuccessMessage("");
     if (!currentUser?.id)            { setError("You must be logged in to post notes."); return; }
     if (!notesData.title.trim())     { setError("Title is required."); return; }
-    if (!pdfFile)                    { setError("Please select a PDF file."); return; }
-    setSubmitting(true); setPdfUploading(true);
+    if (!noteFile)                   { setError("Please select a file."); return; }
+    if (noteFile.size > 10 * 1024 * 1024) { setError("File too large. Maximum size is 10MB."); return; }
+
+    setSubmitting(true); setNoteFileUploading(true);
     try {
       const baseUrl = getApiBaseUrl();
-      const urlRes  = await fetch(`${baseUrl}/api/upload-url?filename=${encodeURIComponent(pdfFile.name)}&contentType=application/pdf&folder=PDF`);
+      const urlRes  = await fetch(
+        `${baseUrl}/api/upload-url?filename=${encodeURIComponent(noteFile.name)}&contentType=${encodeURIComponent(noteFile.type)}&folder=Notes`
+      );
       const { uploadUrl, publicUrl } = await urlRes.json();
-      await fetch(uploadUrl, { method: "PUT", body: pdfFile, headers: { "Content-Type": "application/pdf" } });
-      setPdfUploading(false);
+
+      await fetch(uploadUrl, {
+        method: "PUT",
+        body: noteFile,
+        headers: { "Content-Type": noteFile.type },
+      });
+
+      setNoteFileUploading(false);
+
       const notesRes = await fetch(`${baseUrl}/Notes`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: currentUser.id, title: notesData.title.trim(), course_code: notesData.course_code.trim() || null, description: notesData.description.trim() || null, pdf_url: publicUrl }),
+        body: JSON.stringify({
+          user_id: currentUser.id,
+          title: notesData.title.trim(),
+          course_code: notesData.course_code.trim() || null,
+          description: notesData.description.trim() || null,
+          file_url: publicUrl,
+          file_type: noteFile.type,
+        }),
       });
+
       const notesJson = await notesRes.json();
       if (!notesRes.ok) throw new Error(notesJson.error || "Failed to post notes.");
       setSuccessMessage("Notes posted successfully!");
@@ -91,19 +164,19 @@ function PostBook() {
     } catch (err) {
       setError(err.message || "Something went wrong.");
     } finally {
-      setSubmitting(false); setPdfUploading(false);
+      setSubmitting(false); setNoteFileUploading(false);
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError(""); setSuccessMessage("");
-    if (!currentUser?.id)                                                    { setError("You must be logged in to post a listing."); return; }
-    if (!formData.title.trim())                                              { setError("Title is required."); return; }
-    if (!formData.author.trim())                                             { setError("Author is required."); return; }
-    if (!formData.book_condition.trim())                                     { setError("Condition is required."); return; }
-    if (formData.price === "" || Number.isNaN(Number(formData.price)))      { setError("Enter a valid price."); return; }
-    if (Number(formData.price) < 0)                                         { setError("Price cannot be negative."); return; }
+    if (!currentUser?.id)                                               { setError("You must be logged in to post a listing."); return; }
+    if (!formData.title.trim())                                         { setError("Title is required."); return; }
+    if (!formData.author.trim())                                        { setError("Author is required."); return; }
+    if (!formData.book_condition.trim())                                { setError("Condition is required."); return; }
+    if (formData.price === "" || Number.isNaN(Number(formData.price))) { setError("Enter a valid price."); return; }
+    if (Number(formData.price) < 0)                                    { setError("Price cannot be negative."); return; }
 
     setSubmitting(true);
     try {
@@ -217,7 +290,6 @@ function PostBook() {
           margin-bottom: 18px;
         }
 
-        /* Mode toggle */
         .mode-toggle {
           display: flex;
           border-radius: 8px;
@@ -242,7 +314,6 @@ function PostBook() {
 
         .post-card-body { padding: 28px 36px 32px; }
 
-        /* Alert banners */
         .post-error {
           padding: 10px 14px;
           background: #fef2f2;
@@ -263,14 +334,12 @@ function PostBook() {
           font-weight: 600;
         }
 
-        /* Form layout */
         .form-grid {
           display: grid;
           grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 14px;
         }
         .form-full { grid-column: 1 / -1; }
-
         .form-group { display: flex; flex-direction: column; }
         .form-label {
           font-size: 10px;
@@ -294,16 +363,13 @@ function PostBook() {
           transition: border-color 0.2s, box-shadow 0.2s;
           width: 100%;
         }
-        .form-input:focus,
-        .form-select:focus,
-        .form-textarea:focus {
+        .form-input:focus, .form-select:focus, .form-textarea:focus {
           border-color: #FFBD00;
           background: #fff;
           box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
         }
         .form-textarea { min-height: 100px; resize: vertical; }
 
-        /* Image grid */
         .img-section { margin-top: 4px; }
         .img-grid {
           display: grid;
@@ -322,11 +388,7 @@ function PostBook() {
           align-items: center;
           justify-content: center;
         }
-        .img-slot-empty {
-          color: #bbb;
-          font-size: 12px;
-          font-weight: 600;
-        }
+        .img-slot-empty { color: #bbb; font-size: 12px; font-weight: 600; }
         .img-preview { width: 100%; height: 100%; object-fit: cover; display: block; }
         .img-num-badge {
           position: absolute;
@@ -355,7 +417,6 @@ function PostBook() {
           justify-content: center;
           font-size: 14px;
         }
-
         .upload-btn {
           width: 100%;
           padding: 11px;
@@ -370,11 +431,9 @@ function PostBook() {
           transition: border-color 0.2s, background 0.2s;
         }
         .upload-btn:hover { border-color: #FFBD00; background: #fff; }
-
         .helper-text { margin-top: 7px; color: #aaa; font-size: 12px; }
 
-        /* PDF drop zone */
-        .pdf-zone {
+        .file-zone {
           border: 2px dashed #e8e8e8;
           border-radius: 10px;
           padding: 24px;
@@ -382,10 +441,13 @@ function PostBook() {
           background: #fafafa;
           cursor: pointer;
           transition: border-color 0.2s, background 0.2s;
+          margin-top: 6px;
         }
-        .pdf-zone:hover { border-color: #FFBD00; background: #fff; }
-        .pdf-zone-text { color: #aaa; font-size: 13px; }
-        .pdf-zone-name { font-weight: 700; color: #0a0a0a; font-size: 13px; }
+        .file-zone:hover { border-color: #FFBD00; background: #fff; }
+        .file-zone-text { color: #aaa; font-size: 13px; }
+        .file-zone-name { font-weight: 700; color: #0a0a0a; font-size: 13px; }
+        .file-zone-type { font-size: 11px; color: #888; margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .file-zone-types { color: #bbb; font-size: 11px; margin-top: 6px; }
 
         .submit-btn {
           width: 100%;
@@ -423,11 +485,10 @@ function PostBook() {
       <div className="post-page">
         <div className="post-card">
 
-          {/* Header */}
           <div className="post-card-header">
             <div className="post-eyebrow">UWM Student Marketplace</div>
             <div className="post-heading">
-              {mode === "book" ? "Post a Book" : "Post Notes"}
+              {mode === "book" ? "Post a Book" : "Upload Notes"}
             </div>
 
             <div className="mode-toggle">
@@ -436,14 +497,14 @@ function PostBook() {
                 className={`mode-btn ${mode === "book" ? "active" : "inactive"}`}
                 onClick={() => { setMode("book"); setError(""); setSuccessMessage(""); }}
               >
-                📚 Book
+                Book
               </button>
               <button
                 type="button"
                 className={`mode-btn ${mode === "notes" ? "active" : "inactive"}`}
                 onClick={() => { setMode("notes"); setError(""); setSuccessMessage(""); }}
               >
-                📄 Notes PDF
+                Notes
               </button>
             </div>
           </div>
@@ -494,8 +555,6 @@ function PostBook() {
                     <label className="form-label">Notes</label>
                     <textarea className="form-textarea" name="notes" placeholder="Any highlights, wear, missing pages, access code info, etc." value={formData.notes} onChange={handleChange} />
                   </div>
-
-                  {/* Image section */}
                   <div className="form-group form-full img-section">
                     <label className="form-label">Photos (up to 6)</label>
                     <div className="img-grid">
@@ -505,7 +564,7 @@ function PostBook() {
                           {slot ? (
                             <>
                               <img src={slot.previewUrl} alt={`Preview ${index + 1}`} className="img-preview" />
-                              <button type="button" className="img-remove" onClick={() => removeImageAtIndex(index)} aria-label={`Remove image ${index + 1}`}>×</button>
+                              <button type="button" className="img-remove" onClick={() => removeImageAtIndex(index)}>×</button>
                             </>
                           ) : (
                             <div className="img-slot-empty">Empty</div>
@@ -513,14 +572,11 @@ function PostBook() {
                         </div>
                       ))}
                     </div>
-                    <button type="button" className="upload-btn" onClick={handleUploadButtonClick}>
-                      + Upload Image
-                    </button>
+                    <button type="button" className="upload-btn" onClick={handleUploadButtonClick}>+ Upload Image</button>
                     <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImagePick} style={{ display: "none" }} />
-                    <div className="helper-text">Each new image fills the next open slot. Image 1 uploads first, then 2, etc.</div>
+                    <div className="helper-text">Each new image fills the next open slot.</div>
                   </div>
                 </div>
-
                 <button type="submit" className="submit-btn" disabled={submitting}>
                   {submitting ? "Posting…" : "Post Listing"}
                 </button>
@@ -532,7 +588,7 @@ function PostBook() {
               <form onSubmit={handleNotesSubmit}>
                 <div className="form-grid">
                   <div className="form-group form-full">
-                    <label className="form-label">Notes Title *</label>
+                    <label className="form-label">Title *</label>
                     <input className="form-input" type="text" name="title" placeholder="Exam 2 Study Guide" value={notesData.title} onChange={handleNotesChange} required />
                   </div>
                   <div className="form-group form-full">
@@ -544,19 +600,31 @@ function PostBook() {
                     <textarea className="form-textarea" name="description" placeholder="What's covered, which professor, semester, etc." value={notesData.description} onChange={handleNotesChange} />
                   </div>
                   <div className="form-group form-full">
-                    <label className="form-label">PDF File *</label>
-                    <div className="pdf-zone" onClick={() => document.getElementById("pdfInput").click()}>
-                      {pdfFile
-                        ? <span className="pdf-zone-name">📄 {pdfFile.name}</span>
-                        : <span className="pdf-zone-text">Click to select a PDF file</span>
-                      }
+                    <label className="form-label">File *</label>
+                    <div className="file-zone" onClick={() => document.getElementById("noteFileInput").click()}>
+                      {noteFile ? (
+                        <>
+                          <span className="file-zone-name">{noteFile.name}</span>
+                          <div className="file-zone-type">{fileTypeLabel(noteFile.type)}</div>
+                        </>
+                      ) : (
+                        <>
+                          <span className="file-zone-text">Click to select a file</span>
+                          <div className="file-zone-types">PDF · Image · Audio · Video · CSV · PowerPoint — Max 10MB</div>
+                        </>
+                      )}
                     </div>
-                    <input id="pdfInput" type="file" accept="application/pdf" style={{ display: "none" }} onChange={(e) => setPdfFile(e.target.files[0])} />
+                    <input
+                      id="noteFileInput"
+                      type="file"
+                      accept={ALLOWED_NOTE_ACCEPT}
+                      style={{ display: "none" }}
+                      onChange={handleNoteFileChange}
+                    />
                   </div>
                 </div>
-
                 <button type="submit" className="submit-btn" disabled={submitting}>
-                  {pdfUploading ? "Uploading PDF…" : submitting ? "Posting…" : "Post Notes"}
+                  {noteFileUploading ? "Uploading File…" : submitting ? "Posting…" : "Post Notes"}
                 </button>
               </form>
             )}

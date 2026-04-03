@@ -3,6 +3,17 @@ import { getApiBaseUrl } from "./apiBaseUrl";
 import { getStoredUser, setStoredUser } from "./auth";
 import { Link } from "react-router-dom";
 
+function fileTypeLabel(mimeType) {
+  if (!mimeType) return "File";
+  if (mimeType === "application/pdf") return "PDF";
+  if (mimeType.startsWith("image/")) return "Image";
+  if (mimeType.startsWith("audio/")) return "Audio";
+  if (mimeType.startsWith("video/")) return "Video";
+  if (mimeType === "text/csv" || mimeType === "application/vnd.ms-excel") return "CSV";
+  if (mimeType === "application/vnd.ms-powerpoint" || mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return "PowerPoint";
+  return "File";
+}
+
 function Profile() {
   const [user, setUser]                 = useState(null);
   const [listings, setListings]         = useState([]);
@@ -170,7 +181,6 @@ function Profile() {
           overflow: hidden;
         }
 
-        /* Profile header */
         .profile-card-header {
           background: #0a0a0a;
           padding: 32px 36px 28px;
@@ -234,7 +244,6 @@ function Profile() {
           color: rgba(255,255,255,0.4);
         }
 
-        /* Listings section */
         .profile-card-body { padding: 24px 28px 28px; }
 
         .section-heading {
@@ -282,6 +291,16 @@ function Profile() {
           font-size: 12px;
           color: #888;
           flex: 1 1 auto;
+        }
+        .listing-type-tag {
+          font-size: 10px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          text-transform: uppercase;
+          background: #FFBD00;
+          color: #0a0a0a;
+          padding: 2px 8px;
+          border-radius: 20px;
         }
         .listing-actions {
           display: flex;
@@ -352,7 +371,6 @@ function Profile() {
           font-size: 13px;
         }
 
-        /* ── Edit Modal ── */
         .modal-overlay {
           position: fixed;
           inset: 0;
@@ -403,9 +421,7 @@ function Profile() {
           color: #666;
           margin-bottom: 5px;
         }
-        .modal-input,
-        .modal-select,
-        .modal-textarea {
+        .modal-input, .modal-select, .modal-textarea {
           padding: 10px 13px;
           border: 1.5px solid #e8e8e8;
           border-radius: 8px;
@@ -417,9 +433,7 @@ function Profile() {
           width: 100%;
           transition: border-color 0.2s, box-shadow 0.2s;
         }
-        .modal-input:focus,
-        .modal-select:focus,
-        .modal-textarea:focus {
+        .modal-input:focus, .modal-select:focus, .modal-textarea:focus {
           border-color: #FFBD00;
           background: #fff;
           box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
@@ -464,7 +478,6 @@ function Profile() {
       <div className="profile-page">
         <div className="profile-card">
 
-          {/* Header */}
           <div className="profile-card-header">
             <label className="profile-avatar-wrap" title="Click to change photo">
               <input type="file" accept="image/*" style={{ display: "none" }} onChange={handleAvatarChange} disabled={avatarUploading} />
@@ -477,10 +490,8 @@ function Profile() {
             <div className="profile-email">{user.email}</div>
           </div>
 
-          {/* Body */}
           <div className="profile-card-body">
 
-            {/* Listings */}
             <div className="section-heading">
               My Listings <span className="section-count">{listings.length}</span>
             </div>
@@ -497,7 +508,6 @@ function Profile() {
               </div>
             ))}
 
-            {/* Notes */}
             <div className="section-heading" style={{ marginTop: "24px" }}>
               My Notes <span className="section-count">{notes.length}</span>
             </div>
@@ -505,10 +515,17 @@ function Profile() {
             {notes.length === 0 && <div className="empty-section">No notes posted yet.</div>}
             {notes.map((note) => (
               <div key={note.note_id} className="listing-row">
-                <div className="listing-title">📄 {note.title}</div>
-                <div className="listing-meta">{note.course_code || "No course"}</div>
+                <div className="listing-title">{note.title}</div>
+                <div className="listing-meta">
+                  {note.course_code || "No course"}
+                  {note.file_type && (
+                    <span className="listing-type-tag" style={{ marginLeft: "8px" }}>
+                      {fileTypeLabel(note.file_type)}
+                    </span>
+                  )}
+                </div>
                 <div className="listing-actions">
-                  <button className="btn-view" onClick={() => window.open(note.pdf_url, "_blank")}>View</button>
+                  <button className="btn-view" onClick={() => window.open(note.file_url, "_blank")}>View</button>
                   <button className="btn-delete" onClick={() => handleDeleteNote(note.note_id)}>Delete</button>
                 </div>
               </div>
@@ -526,7 +543,6 @@ function Profile() {
         </div>
       </div>
 
-      {/* Edit Modal */}
       {showEditModal && (
         <div className="modal-overlay" onClick={(e) => { if (e.target === e.currentTarget) setShowEditModal(false); }}>
           <div className="modal-card">

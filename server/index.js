@@ -1,5 +1,6 @@
 // server/index.js
-require("dotenv").config({ path: '../client/.env' });const express = require("express");
+require("dotenv").config({ path: '../client/.env' });
+const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
 const crypto = require("crypto");
@@ -119,7 +120,7 @@ async function ensureSchema() {
     )
   `);
 
-   // Notes table
+  // Notes table — uses file_url to support all file types
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Notes (
       note_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -127,7 +128,8 @@ async function ensureSchema() {
       title VARCHAR(255) NOT NULL,
       course_code VARCHAR(100),
       description TEXT,
-      pdf_url VARCHAR(500) NOT NULL,
+      file_url VARCHAR(500) NOT NULL,
+      file_type VARCHAR(100),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
     )
@@ -147,26 +149,19 @@ async function ensureSchema() {
     }
   }
 
-
-  await runQuery(`
-    ALTER TABLE StudyMaterials
-    MODIFY COLUMN uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
-  `);
-
+  // Add file_type column to Notes if it doesn't exist yet
   try {
-    await runQuery(`
-      ALTER TABLE StudyMaterials
-      ADD CONSTRAINT fk_studymaterials_user
-      FOREIGN KEY (user_id)
-      REFERENCES Users(user_id)
-      ON DELETE CASCADE
-      ON UPDATE CASCADE
-    `);
+    await runQuery('ALTER TABLE Notes ADD COLUMN file_type VARCHAR(100)');
   } catch (error) {
-    if (error.code !== "ER_DUP_KEYNAME" && error.code !== "ER_CANT_CREATE_TABLE") throw error;
+    if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
 
-
+  // Add status column to BookListings if it doesn't exist yet
+  try {
+    await runQuery(`ALTER TABLE BookListings ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Available'`);
+  } catch (error) {
+    if (error.code !== "ER_DUP_FIELDNAME") throw error;
+  }
 }
 
 const r2Client = new S3Client({
@@ -184,36 +179,24 @@ const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     files: 6,
-    fileSize: 10 * 1024 * 1024, // 10 MB per image
+    fileSize: 10 * 1024 * 1024,
   },
   fileFilter: (_req, file, cb) => {
-    const allowed = [
-      "image/jpeg",
-      "image/png",
-      "image/webp",
-      "image/gif",
-    ];
-
+    const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
     if (!allowed.includes(file.mimetype)) {
       return cb(new Error("Only JPG, PNG, WEBP, and GIF images are allowed."));
     }
-
     cb(null, true);
   },
 });
 
 function getImageExtension(mimetype) {
   switch (mimetype) {
-    case "image/jpeg":
-      return ".jpg";
-    case "image/png":
-      return ".png";
-    case "image/webp":
-      return ".webp";
-    case "image/gif":
-      return ".gif";
-    default:
-      return "";
+    case "image/jpeg": return ".jpg";
+    case "image/png": return ".png";
+    case "image/webp": return ".webp";
+    case "image/gif": return ".gif";
+    default: return "";
   }
 }
 
@@ -261,11 +244,25 @@ app.get("/db-test", async (req, res, next) => {
   }
 });
 
-// GET /BookListings — includes seller_name for Contact Seller feature
+// GET /BookListings
 app.get("/BookListings", async (req, res, next) => {
   try {
     const [rows] = await pool.query(`
-      SELECT bl.*, u.full_name AS seller_name
+      SELECT
+        bl.listing_id,
+        bl.user_id,
+        bl.title,
+        bl.author,
+        bl.\`Edition\` AS edition,
+        bl.isbn,
+        bl.price,
+        bl.course_code,
+        bl.book_condition,
+        bl.notes,
+        bl.status,
+        bl.image_url,
+        bl.created_at,
+        u.full_name AS seller_name
       FROM BookListings bl
       JOIN Users u ON u.user_id = bl.user_id
       ORDER BY bl.created_at DESC
@@ -276,50 +273,75 @@ app.get("/BookListings", async (req, res, next) => {
   }
 });
 
-// POST /BookListings
-
-app.get("/Notes", async (req, res, next) => {
+// PUT /BookListings/:id
+app.put("/BookListings/:id", async (req, res, next) => {
   try {
-    const rows = await runQuery(`
-      SELECT n.*, u.full_name AS seller_name
-      FROM Notes n
-      JOIN Users u ON u.user_id = n.user_id
-      ORDER BY n.created_at DESC
-    `);
-    res.json(rows);
-  } catch (err) { next(err); }
-});
+    const { id } = req.params;
+    const { title, author, edition, isbn, course_code, book_condition, price, notes, status } = req.body;
 
-app.post("/Notes", async (req, res, next) => {
-  try {
-    const { user_id, title, course_code, description, pdf_url } = req.body;
-    if (!user_id || !title || !pdf_url) {
-      return res.status(400).json({ error: "user_id, title, and pdf_url are required." });
+    if (!title || !author || !book_condition || price == null) {
+      return res.status(400).json({ error: "title, author, price, and book_condition are required." });
     }
-    const result = await runQuery(
-      `INSERT INTO Notes (user_id, title, course_code, description, pdf_url)
-       VALUES (?, ?, ?, ?, ?)`,
-      [user_id, title.trim(), course_code || null, description || null, pdf_url]
+
+    const cleanedTitle = String(title).trim();
+    const cleanedAuthor = String(author).trim();
+    const cleanedEdition = edition ? String(edition).trim() : null;
+    const cleanedIsbn = isbn ? String(isbn).trim() : null;
+    const cleanedCourseCode = course_code ? String(course_code).trim() : null;
+    const cleanedCondition = String(book_condition).trim();
+    const cleanedNotes = notes ? String(notes).trim() : null;
+    const numericPrice = Number(price);
+
+    if (Number.isNaN(numericPrice) || numericPrice < 0) {
+      return res.status(400).json({ error: "Price must be a valid non-negative number." });
+    }
+
+    const allowedStatuses = ["Available", "Pending", "Sold"];
+    const cleanedStatus = allowedStatuses.includes(status) ? status : "Available";
+
+    await runQuery(
+      `UPDATE BookListings
+       SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
+           book_condition = ?, price = ?, notes = ?, status = ?
+       WHERE listing_id = ?`,
+      [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode, cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
     );
-    res.status(201).json({ message: "Notes posted successfully.", note_id: result.insertId });
-  } catch (err) { next(err); }
+
+    const updated = await runQuery(
+      `SELECT bl.listing_id, bl.user_id, bl.title, bl.author, bl.\`Edition\` AS edition,
+              bl.isbn, bl.price, bl.course_code, bl.book_condition, bl.notes, bl.status,
+              bl.image_url, bl.created_at, u.full_name AS seller_name
+       FROM BookListings bl
+       JOIN Users u ON u.user_id = bl.user_id
+       WHERE bl.listing_id = ? LIMIT 1`,
+      [id]
+    );
+
+    res.json(updated[0]);
+  } catch (err) {
+    next(err);
+  }
 });
 
+// DELETE /BookListings/:id
+app.delete("/BookListings/:id", async (req, res, next) => {
+  try {
+    const { id } = req.params;
 
+    const existing = await runQuery("SELECT listing_id FROM BookListings WHERE listing_id = ? LIMIT 1", [id]);
+    if (existing.length === 0) return res.status(404).json({ error: "Listing not found." });
+
+    await runQuery("DELETE FROM BookListings WHERE listing_id = ?", [id]);
+    res.json({ success: true, message: "Listing deleted successfully." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /BookListings
 app.post("/BookListings", async (req, res, next) => {
   try {
-    const {
-      user_id,
-      title,
-      author,
-      edition,
-      isbn,
-      price,
-      course_code,
-      book_condition,
-      notes,
-      image_url,
-    } = req.body;
+    const { user_id, title, author, edition, isbn, price, course_code, book_condition, notes, image_url } = req.body;
 
     if (!user_id || !title || !author || !book_condition || price == null) {
       return res.status(400).json({ error: "Missing required fields" });
@@ -341,25 +363,57 @@ app.post("/BookListings", async (req, res, next) => {
     const [result] = await pool.execute(
       `INSERT INTO BookListings
       (user_id, title, author, \`Edition\`, isbn, price, course_code, book_condition, notes, status, image_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'available', ?)`,
-      [
-        user_id,
-        cleanedTitle,
-        cleanedAuthor,
-        cleanedEdition,
-        cleanedIsbn,
-        numericPrice,
-        cleanedCourseCode,
-        cleanedCondition,
-        cleanedNotes,
-        image_url || null,
-      ]
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Available', ?)`,
+      [user_id, cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, numericPrice, cleanedCourseCode, cleanedCondition, cleanedNotes, image_url || null]
     );
 
-    res.status(201).json({
-      message: "Book successfully added!",
-      listing_id: result.insertId,
-    });
+    res.status(201).json({ message: "Book successfully added!", listing_id: result.insertId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /Notes — supports ?userId= for profile page
+app.get("/Notes", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    const rows = userId
+      ? await runQuery(
+          `SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id WHERE n.user_id = ? ORDER BY n.created_at DESC`,
+          [userId]
+        )
+      : await runQuery(
+          `SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id ORDER BY n.created_at DESC`
+        );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// POST /Notes
+app.post("/Notes", async (req, res, next) => {
+  try {
+    const { user_id, title, course_code, description, file_url, file_type } = req.body;
+    if (!user_id || !title || !file_url) {
+      return res.status(400).json({ error: "user_id, title, and file_url are required." });
+    }
+    const result = await runQuery(
+      `INSERT INTO Notes (user_id, title, course_code, description, file_url, file_type)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [user_id, title.trim(), course_code || null, description || null, file_url, file_type || null]
+    );
+    res.status(201).json({ message: "Notes posted successfully.", note_id: result.insertId });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /Notes/:id
+app.delete("/Notes/:id", async (req, res, next) => {
+  try {
+    await runQuery("DELETE FROM Notes WHERE note_id = ?", [req.params.id]);
+    res.json({ success: true });
   } catch (err) {
     next(err);
   }
@@ -382,8 +436,7 @@ app.get('/api/debug-env', (_req, res) => {
     hasSmtpUser: Boolean(process.env.SMTP_USER),
     hasSmtpPass: Boolean(process.env.SMTP_PASS),
     smtpPort: process.env.SMTP_PORT || '2525',
-    smtpFrom: process.env.SMTP_FROM ||
-      'Peer-To-Peer Book Exchange <no-reply@p2pbookexchange.com>',
+    smtpFrom: process.env.SMTP_FROM || 'Peer-To-Peer Book Exchange <no-reply@p2pbookexchange.com>',
     smtpToOverride: process.env.SMTP_TO_OVERRIDE || null,
     boot: BOOT_MARKER,
   });
@@ -424,9 +477,7 @@ app.post('/api/register', async (req, res) => {
       }
 
       await runQuery(
-        `UPDATE Users
-         SET verification_code_hash = ?, verification_expires_at = ?
-         WHERE user_id = ?`,
+        `UPDATE Users SET verification_code_hash = ?, verification_expires_at = ? WHERE user_id = ?`,
         [verificationHash, verificationExpiresAt, currentUser.user_id]
       );
 
@@ -437,8 +488,7 @@ app.post('/api/register', async (req, res) => {
     const passwordHash = hashPassword(String(password));
 
     const result = await runQuery(
-      `INSERT INTO Users
-       (full_name, email, password_hash, is_verified, verification_code_hash, verification_expires_at)
+      `INSERT INTO Users (full_name, email, password_hash, is_verified, verification_code_hash, verification_expires_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
       [String(fullName).trim(), normalizedEmail, passwordHash, false, verificationHash, verificationExpiresAt]
     );
@@ -475,20 +525,15 @@ app.post('/api/verify-email', async (req, res) => {
 
   try {
     const users = await runQuery(
-      `SELECT user_id, verification_code_hash, verification_expires_at, is_verified
-       FROM Users WHERE email = ? LIMIT 1`,
+      `SELECT user_id, verification_code_hash, verification_expires_at, is_verified FROM Users WHERE email = ? LIMIT 1`,
       [normalizedEmail]
     );
 
-    if (users.length === 0) {
-      return res.status(404).json({ error: 'Account not found.' });
-    }
+    if (users.length === 0) return res.status(404).json({ error: 'Account not found.' });
 
     const user = users[0];
 
-    if (user.is_verified) {
-      return res.status(200).json({ message: 'Email is already verified.' });
-    }
+    if (user.is_verified) return res.status(200).json({ message: 'Email is already verified.' });
 
     if (!user.verification_code_hash || !user.verification_expires_at) {
       return res.status(400).json({ error: 'No active verification code. Register again to request a new code.' });
@@ -505,11 +550,7 @@ app.post('/api/verify-email', async (req, res) => {
     }
 
     await runQuery(
-      `UPDATE Users
-       SET is_verified = TRUE,
-           verification_code_hash = NULL,
-           verification_expires_at = NULL
-       WHERE user_id = ?`,
+      `UPDATE Users SET is_verified = TRUE, verification_code_hash = NULL, verification_expires_at = NULL WHERE user_id = ?`,
       [user.user_id]
     );
 
@@ -539,9 +580,7 @@ app.post('/api/login', async (req, res) => {
       [normalizedEmail]
     );
 
-    if (users.length === 0) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
+    if (users.length === 0) return res.status(401).json({ error: 'Invalid email or password.' });
 
     const user = users[0];
 
@@ -551,9 +590,7 @@ app.post('/api/login', async (req, res) => {
       const verificationExpiresAt = getVerificationExpiryDate();
 
       await runQuery(
-        `UPDATE Users
-         SET verification_code_hash = ?, verification_expires_at = ?
-         WHERE user_id = ?`,
+        `UPDATE Users SET verification_code_hash = ?, verification_expires_at = ? WHERE user_id = ?`,
         [verificationHash, verificationExpiresAt, user.user_id]
       );
 
@@ -566,18 +603,11 @@ app.post('/api/login', async (req, res) => {
     }
 
     const passwordIsValid = verifyPassword(String(password), user.password_hash);
-    if (!passwordIsValid) {
-      return res.status(401).json({ error: 'Invalid email or password.' });
-    }
+    if (!passwordIsValid) return res.status(401).json({ error: 'Invalid email or password.' });
 
     return res.status(200).json({
       message: 'Login successful.',
-      user: {
-        id: user.user_id,
-        fullName: user.full_name,
-        email: user.email,
-        profile_image_url: user.profile_image_url,
-      },
+      user: { id: user.user_id, fullName: user.full_name, email: user.email, profile_image_url: user.profile_image_url },
     });
   } catch (error) {
     console.error('Error logging in:', error);
@@ -586,9 +616,7 @@ app.post('/api/login', async (req, res) => {
 });
 
 app.post('/api/logout', async (_req, res) => {
-  return res.status(200).json({
-    message: 'Logout successful.',
-  });
+  return res.status(200).json({ message: 'Logout successful.' });
 });
 
 // PROFILE ROUTES
@@ -611,7 +639,9 @@ app.get('/api/listings', async (req, res, next) => {
     const { userId } = req.query;
     if (!userId) return res.status(400).json({ error: 'userId query param is required.' });
     const rows = await runQuery(
-      'SELECT * FROM BookListings WHERE user_id = ? ORDER BY created_at DESC',
+      `SELECT listing_id, user_id, title, author, \`Edition\` AS edition, isbn,
+              course_code, book_condition, price, notes, status, image_url, created_at
+       FROM BookListings WHERE user_id = ? ORDER BY created_at DESC`,
       [userId]
     );
     res.json(rows);
@@ -623,22 +653,10 @@ app.get('/api/listings', async (req, res, next) => {
 app.put('/api/listings/:id', async (req, res, next) => {
   try {
     const { id } = req.params;
-
-    const {
-      title,
-      author,
-      edition,
-      isbn,
-      course_code,
-      book_condition,
-      price,
-      notes,
-    } = req.body;
+    const { title, author, edition, isbn, course_code, book_condition, price, notes, status } = req.body;
 
     if (!title || !author || !book_condition || price == null) {
-      return res.status(400).json({
-        error: 'title, author, price, and book_condition are required.',
-      });
+      return res.status(400).json({ error: 'title, author, price, and book_condition are required.' });
     }
 
     const cleanedTitle = String(title).trim();
@@ -651,37 +669,27 @@ app.put('/api/listings/:id', async (req, res, next) => {
     const numericPrice = Number(price);
 
     if (Number.isNaN(numericPrice) || numericPrice < 0) {
-      return res.status(400).json({
-        error: 'Price must be a valid non-negative number.',
-      });
+      return res.status(400).json({ error: 'Price must be a valid non-negative number.' });
     }
 
+    const existing = await runQuery('SELECT listing_id, status FROM BookListings WHERE listing_id = ? LIMIT 1', [id]);
+    if (existing.length === 0) return res.status(404).json({ error: 'Listing not found.' });
+
+    const allowedStatuses = ["Available", "Pending", "Sold"];
+    const cleanedStatus = allowedStatuses.includes(status) ? status : (existing[0].status || 'Available');
+
     await runQuery(
-      `UPDATE BookListings
-       SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
-           book_condition = ?, price = ?, notes = ?
-       WHERE listing_id = ?`,
-      [
-        cleanedTitle,
-        cleanedAuthor,
-        cleanedEdition,
-        cleanedIsbn,
-        cleanedCourseCode,
-        cleanedCondition,
-        numericPrice,
-        cleanedNotes,
-        id,
-      ]
+      `UPDATE BookListings SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
+              book_condition = ?, price = ?, notes = ?, status = ? WHERE listing_id = ?`,
+      [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode, cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
     );
 
     const updated = await runQuery(
-      'SELECT * FROM BookListings WHERE listing_id = ? LIMIT 1',
+      `SELECT listing_id, user_id, title, author, \`Edition\` AS edition, isbn,
+              course_code, book_condition, price, notes, status, image_url, created_at
+       FROM BookListings WHERE listing_id = ? LIMIT 1`,
       [id]
     );
-
-    if (updated.length === 0) {
-      return res.status(404).json({ error: 'Listing not found.' });
-    }
 
     res.json(updated[0]);
   } catch (err) {
@@ -716,20 +724,10 @@ app.post("/api/images", upload.array("images", 6), async (req, res, next) => {
       return res.status(400).json({ error: "No images were uploaded." });
     }
 
-    const existingListing = await runQuery(
-      "SELECT listing_id FROM BookListings WHERE listing_id = ? LIMIT 1",
-      [numericListingId]
-    );
+    const existingListing = await runQuery("SELECT listing_id FROM BookListings WHERE listing_id = ? LIMIT 1", [numericListingId]);
+    if (existingListing.length === 0) return res.status(404).json({ error: "Listing not found." });
 
-    if (existingListing.length === 0) {
-      return res.status(404).json({ error: "Listing not found." });
-    }
-
-    const countRows = await runQuery(
-      "SELECT COUNT(*) AS count FROM listing_images WHERE listing_id = ?",
-      [numericListingId]
-    );
-
+    const countRows = await runQuery("SELECT COUNT(*) AS count FROM listing_images WHERE listing_id = ?", [numericListingId]);
     const existingCount = Number(countRows[0]?.count || 0);
 
     if (existingCount + req.files.length > 6) {
@@ -741,61 +739,28 @@ app.post("/api/images", upload.array("images", 6), async (req, res, next) => {
     for (let i = 0; i < req.files.length; i++) {
       const file = req.files[i];
       const orderNumber = existingCount + i + 1;
-
-      const objectKey = buildPostImageKey(
-        numericListingId,
-        orderNumber,
-        file.mimetype
-      );
-
+      const objectKey = buildPostImageKey(numericListingId, orderNumber, file.mimetype);
       const bucketName = process.env.R2_BUCKET_NAME || process.env.R2_BUCKET;
 
-      if (!bucketName) {
-        return res.status(500).json({
-          error: "Missing R2 bucket environment variable (R2_BUCKET_NAME or R2_BUCKET).",
-        });
-      }
+      if (!bucketName) return res.status(500).json({ error: "Missing R2 bucket environment variable." });
 
-      await r2Client.send(
-        new PutObjectCommand({
-          Bucket: bucketName,
-          Key: objectKey,
-          Body: file.buffer,
-          ContentType: file.mimetype,
-        })
-      );
+      await r2Client.send(new PutObjectCommand({ Bucket: bucketName, Key: objectKey, Body: file.buffer, ContentType: file.mimetype }));
 
       const insertResult = await runQuery(
-        `INSERT INTO listing_images
-         (listing_id, order_number, object_key, file_type, uploaded_at)
-         VALUES (?, ?, ?, ?, NOW())`,
+        `INSERT INTO listing_images (listing_id, order_number, object_key, file_type, uploaded_at) VALUES (?, ?, ?, ?, NOW())`,
         [numericListingId, orderNumber, objectKey, file.mimetype]
       );
 
       const publicUrl = buildPublicImageUrl(objectKey);
 
-      // Save the first image as the listing cover image
       if (orderNumber === 1) {
-        await runQuery(
-          "UPDATE BookListings SET image_url = ? WHERE listing_id = ?",
-          [publicUrl, numericListingId]
-        );
+        await runQuery("UPDATE BookListings SET image_url = ? WHERE listing_id = ?", [publicUrl, numericListingId]);
       }
 
-      uploadedImages.push({
-        id: insertResult.insertId,
-        listing_id: numericListingId,
-        order_number: orderNumber,
-        object_key: objectKey,
-        file_type: file.mimetype,
-        image_url: publicUrl,
-      });
+      uploadedImages.push({ id: insertResult.insertId, listing_id: numericListingId, order_number: orderNumber, object_key: objectKey, file_type: file.mimetype, image_url: publicUrl });
     }
 
-    res.status(201).json({
-      message: "Images uploaded successfully.",
-      images: uploadedImages,
-    });
+    res.status(201).json({ message: "Images uploaded successfully.", images: uploadedImages });
   } catch (err) {
     next(err);
   }
@@ -808,7 +773,7 @@ app.get("/api/upload-url", async (req, res, next) => {
       return res.status(400).json({ error: "filename and contentType are required." });
     }
 
-    const allowedFolders = ["Profile_Pic", "Post_Pic", "PDF"];
+    const allowedFolders = ["Profile_Pic", "Post_Pic", "Notes"];
     const targetFolder = allowedFolders.includes(folder) ? folder : "Profile_Pic";
     const key = `${targetFolder}/${Date.now()}-${filename}`;
 
@@ -830,38 +795,17 @@ app.get("/api/upload-url", async (req, res, next) => {
     next(err);
   }
 });
- 
+
 app.put("/api/users/:id/avatar", async (req, res, next) => {
   try {
     const { avatarUrl } = req.body;
     if (!avatarUrl) return res.status(400).json({ error: "avatarUrl is required." });
- 
-    await runQuery(
-      "UPDATE Users SET profile_image_url = ? WHERE user_id = ?",
-      [avatarUrl, req.params.id]
-    );
- 
+
+    await runQuery("UPDATE Users SET profile_image_url = ? WHERE user_id = ?", [avatarUrl, req.params.id]);
     res.json({ success: true, profile_image_url: avatarUrl });
   } catch (err) {
     next(err);
   }
-});
-
-app.get("/Notes", async (req, res, next) => {
-  try {
-    const { userId } = req.query;
-    const rows = userId
-      ? await runQuery(`SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id WHERE n.user_id = ? ORDER BY n.created_at DESC`, [userId])
-      : await runQuery(`SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id ORDER BY n.created_at DESC`);
-    res.json(rows);
-  } catch (err) { next(err); }
-});
-
-app.delete("/Notes/:id", async (req, res, next) => {
-  try {
-    await runQuery("DELETE FROM Notes WHERE note_id = ?", [req.params.id]);
-    res.json({ success: true });
-  } catch (err) { next(err); }
 });
 
 /*PROFILE ROUTES END*/
@@ -870,53 +814,31 @@ app.delete("/Notes/:id", async (req, res, next) => {
 // MESSAGING ROUTES
 // ─────────────────────────────────────────────────────────────────────────────
 
-// GET /api/messages/conversations
 app.get("/api/messages/conversations", async (req, res, next) => {
   try {
     const userId = parseInt(req.query.userId, 10);
     if (!userId) return res.status(400).json({ error: "userId is required." });
 
-    // Step 1: Get all distinct (other_user, listing) pairs this user is part of
     const pairs = await runQuery(
-      `SELECT DISTINCT
-         IF(sender_id = ?, receiver_id, sender_id) AS other_user_id,
-         listing_id
-       FROM Messages
-       WHERE sender_id = ? OR receiver_id = ?`,
+      `SELECT DISTINCT IF(sender_id = ?, receiver_id, sender_id) AS other_user_id, listing_id
+       FROM Messages WHERE sender_id = ? OR receiver_id = ?`,
       [userId, userId, userId]
     );
 
-    if (pairs.length === 0) {
-      return res.json([]);
-    }
+    if (pairs.length === 0) return res.json([]);
 
-    // Step 2: For each pair, get the last message, user name, book title, unread count
     const conversations = await Promise.all(
       pairs.map(async ({ other_user_id, listing_id }) => {
         const [lastMsg] = await runQuery(
-          `SELECT content, sent_at FROM Messages
-           WHERE listing_id = ?
-             AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
+          `SELECT content, sent_at FROM Messages WHERE listing_id = ?
+           AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
            ORDER BY sent_at DESC LIMIT 1`,
           [listing_id, userId, other_user_id, other_user_id, userId]
         );
-
-        const [otherUser] = await runQuery(
-          `SELECT full_name FROM Users WHERE user_id = ?`,
-          [other_user_id]
-        );
-
-        const [book] = await runQuery(
-          `SELECT title FROM BookListings WHERE listing_id = ?`,
-          [listing_id]
-        );
-
+        const [otherUser] = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [other_user_id]);
+        const [book] = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listing_id]);
         const [unreadRow] = await runQuery(
-          `SELECT COUNT(*) AS unread_count FROM Messages
-           WHERE listing_id = ?
-             AND sender_id = ?
-             AND receiver_id = ?
-             AND is_read = FALSE`,
+          `SELECT COUNT(*) AS unread_count FROM Messages WHERE listing_id = ? AND sender_id = ? AND receiver_id = ? AND is_read = FALSE`,
           [listing_id, other_user_id, userId]
         );
 
@@ -932,16 +854,13 @@ app.get("/api/messages/conversations", async (req, res, next) => {
       })
     );
 
-    // Sort by most recent message
     conversations.sort((a, b) => new Date(b.last_sent_at) - new Date(a.last_sent_at));
-
     res.json(conversations);
   } catch (err) {
     next(err);
   }
 });
 
-// GET /api/messages
 app.get("/api/messages", async (req, res, next) => {
   try {
     const { userId, otherUserId, listingId } = req.query;
@@ -951,12 +870,8 @@ app.get("/api/messages", async (req, res, next) => {
 
     const rows = await runQuery(
       `SELECT message_id, sender_id, receiver_id, listing_id, content, is_read, sent_at
-       FROM Messages
-       WHERE listing_id = ?
-         AND (
-               (sender_id = ? AND receiver_id = ?)
-            OR (sender_id = ? AND receiver_id = ?)
-         )
+       FROM Messages WHERE listing_id = ?
+         AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
        ORDER BY sent_at ASC`,
       [listingId, userId, otherUserId, otherUserId, userId]
     );
@@ -967,7 +882,6 @@ app.get("/api/messages", async (req, res, next) => {
   }
 });
 
-// POST /api/messages
 app.post("/api/messages", async (req, res, next) => {
   try {
     const { senderId, receiverId, listingId, content } = req.body;
@@ -977,23 +891,17 @@ app.post("/api/messages", async (req, res, next) => {
     }
 
     const result = await runQuery(
-      `INSERT INTO Messages (sender_id, receiver_id, listing_id, content, is_read)
-       VALUES (?, ?, ?, ?, FALSE)`,
+      `INSERT INTO Messages (sender_id, receiver_id, listing_id, content, is_read) VALUES (?, ?, ?, ?, FALSE)`,
       [senderId, receiverId, listingId, content.trim()]
     );
 
-    const [newMessage] = await runQuery(
-      "SELECT * FROM Messages WHERE message_id = ?",
-      [result.insertId]
-    );
-
+    const [newMessage] = await runQuery("SELECT * FROM Messages WHERE message_id = ?", [result.insertId]);
     res.status(201).json(newMessage);
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /api/messages/read
 app.put("/api/messages/read", async (req, res, next) => {
   try {
     const { userId, otherUserId, listingId } = req.body;
@@ -1003,12 +911,7 @@ app.put("/api/messages/read", async (req, res, next) => {
     }
 
     await runQuery(
-      `UPDATE Messages
-       SET is_read = TRUE
-       WHERE receiver_id = ?
-         AND sender_id   = ?
-         AND listing_id  = ?
-         AND is_read     = FALSE`,
+      `UPDATE Messages SET is_read = TRUE WHERE receiver_id = ? AND sender_id = ? AND listing_id = ? AND is_read = FALSE`,
       [userId, otherUserId, listingId]
     );
 
