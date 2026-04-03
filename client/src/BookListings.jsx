@@ -50,6 +50,7 @@ function BookListings() {
     const searchLower = searchTerm.toLowerCase();
     const title = (book.title || "").toLowerCase();
     const course = (book.course_code || "").toLowerCase();
+    const author = (book.author || "").toLowerCase();
     const isbn = (book.isbn || "").toLowerCase();
     const description = (book.description || "").toLowerCase();
 
