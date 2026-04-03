@@ -11,7 +11,7 @@ import Login        from "./Login.jsx";
 import Register     from "./Register.jsx";
 import VerifyEmail  from "./VerifyEmail.jsx";
 import BookListings from "./BookListings.jsx";
-import BookDetail   from "./BookDetail.jsx";
+import BookDetail   from "./Bookdetail.jsx";
 import PostBook     from "./PostBook.jsx";
 import Profile      from "./Profile.jsx";
 import Messages     from "./Messages.jsx";
