@@ -23,6 +23,15 @@ function BookListings() {
   const [category, setCategory] = useState("All");
   const [sortOrder, setSortOrder] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
+  
+  const [editingId, setEditingId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
+  const [showEditModal, setShowEditModal] = useState(false);
+  
+  const [editData, setEditData] = useState({
+    listing_id: null, title: "", author: "", edition: "", isbn: "",
+    course_code: "", book_condition: "", price: "", notes: "", status: "Available",
+  });
 
   const [editingId, setEditingId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -98,6 +107,131 @@ function BookListings() {
         bookTitle: book.title,
       },
     });
+  }
+  // opens edit mode for a listing only
+  function handleEditClick(book) {
+    setEditingId(book.listing_id);
+
+    setEditData({
+      listing_id: book.listing_id,
+      title: book.title || "",
+      author: book.author || "",
+      edition: book.edition || "",
+      isbn: book.isbn || "",
+      course_code: book.course_code || "",
+      book_condition: book.book_condition || "Good",
+      price: book.price || "",
+      notes: book.notes || "",
+      status: book.status || "Available",
+    });
+
+     setShowEditModal(true);
+  }
+
+  //  cancel edit mode
+  function handleCancelEdit() {
+    setEditingId(null);
+    setShowEditModal(false);
+    setEditData({
+      listing_id: null,
+      title: "",
+      author: "",
+      edition: "",
+      isbn: "",
+      course_code: "",
+      book_condition: "",
+      price: "",
+      notes: "",
+      status: "Available",
+    });
+  }
+
+  // save updated listing
+  async function handleSaveEdit(book) {
+    try {
+      const baseUrl = getApiBaseUrl();
+
+      if (!editData.listing_id) {
+      throw new Error("Missing listing id.");
+    }
+
+      const payload = {
+        title: editData.title,
+        author: editData.author,
+        edition: editData.edition || null,
+        isbn: editData.isbn || null,
+        course_code: editData.course_code || null,
+        book_condition: editData.book_condition,
+        price: Number(editData.price),
+        notes: editData.notes || null,
+        status: editData.status,
+      };
+
+      const res = await fetch(`${baseUrl}/BookListings/${editData.listing_id}`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to update listing");
+      }
+
+      let updatedBook;
+      try {
+        updatedBook = await res.json();
+      } catch {
+        updatedBook = payload;
+      }
+
+      setBooks((prev) =>
+        prev.map((item) =>
+          item._type === "book" && item.listing_id === editData.listing_id
+            ? { ...item, ...updatedBook, _type: "book" }
+            : item
+        )
+      );
+
+      handleCancelEdit();
+    } catch (error) {
+      console.error("Save error:", error);
+      alert("Could not save changes.");
+    }
+  }
+
+  // delete listing
+  async function handleDeleteConfirmed(book) {
+    if (!deleteTarget) return;
+
+    try {
+      const baseUrl = getApiBaseUrl();
+
+      const res = await fetch(`${baseUrl}/BookListings/${deleteTarget.listing_id}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to delete listing");
+      }
+
+      setBooks((prev) =>
+        prev.filter(
+          (item) =>
+            !(item._type === "book" && item.listing_id === deleteTarget.listing_id)
+        )
+      );
+
+      if (editingId === deleteTarget.listing_id) {
+        handleCancelEdit();
+      }
+
+      setDeleteTarget(null);
+    } catch (error) {
+      console.error("Delete error:", error);
+      alert("Could not delete listing.");
+    }
   }
 
   function handleEditClick(book) {
@@ -474,7 +608,6 @@ function BookListings() {
           transition: background 0.15s, transform 0.15s;
         }
         .btn-secondary:hover { background: #222; transform: translateY(-1px); }
-
         .btn-danger {
           background: #b3261e;
           color: white;
@@ -502,7 +635,6 @@ function BookListings() {
           letter-spacing: 2px;
           color: rgba(255,255,255,0.5);
         }
-
         .modal-overlay {
           position: fixed;
           inset: 0;
@@ -726,8 +858,50 @@ function BookListings() {
                               )}
                             </>
                           )}
-                        </div>
-                      </div>
+
+                          <div className="book-title">{book.title}</div>
+                          <div className="book-author">
+                            {isNotes ? (book.course_code || "") : book.author}
+                          </div>
+                          {isNotes && book.description && (
+                            <div className="book-description">{book.description}</div>
+                          )}
+
+                          <div className="card-footer">
+                            <div className="card-price">{isNotes ? "Free" : `$${book.price}`}</div>
+                            <div className="card-btn-group">
+                              {isNotes ? (
+                                <button className="btn-primary" onClick={() => window.open(book.pdf_url, "_blank")}>
+                                  View PDF
+                                </button>
+                              ) : (
+                                <>
+                                  <button className="btn-primary" onClick={() => navigate(`/listings/${book.listing_id}`)}>Details</button>
+                                  {!isOwnListing && (
+                                    <button className="btn-secondary" onClick={() => handleContact(book)}>
+                                      Contact
+                                    </button>
+                                  )}
+                                  {isOwnListing && (
+                                    <>
+                                      <button
+                                        className="btn-secondary"
+                                        onClick={() => handleEditClick(book)}
+                                      >
+                                        Edit
+                                      </button>
+                                      <button
+                                        className="btn-danger"
+                                        onClick={() => setDeleteTarget(book)}
+                                      >
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          </div>
                     </div>
                   </div>
                 );

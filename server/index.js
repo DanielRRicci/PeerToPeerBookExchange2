@@ -583,7 +583,7 @@ app.post('/api/login', async (req, res) => {
     if (users.length === 0) return res.status(401).json({ error: 'Invalid email or password.' });
 
     const user = users[0];
-
+    
     if (!user.is_verified) {
       const verificationCode = generateVerificationCode();
       const verificationHash = hashVerificationCode(verificationCode);
@@ -601,7 +601,7 @@ app.post('/api/login', async (req, res) => {
         requiresVerification: true,
       });
     }
-
+    
     const passwordIsValid = verifyPassword(String(password), user.password_hash);
     if (!passwordIsValid) return res.status(401).json({ error: 'Invalid email or password.' });
 
