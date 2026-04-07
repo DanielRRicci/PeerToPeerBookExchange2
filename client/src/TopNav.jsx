@@ -1,41 +1,47 @@
 import React, { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { clearStoredUser, getStoredUser, setStoredUser, subscribeToAuthChanges } from "./auth";
 import { getApiBaseUrl } from "./apiBaseUrl";
 
 export default function TopNav() {
-  const navigate = useNavigate();
+  const navigate  = useNavigate();
+  const location  = useLocation();
+  const [menuOpen,       setMenuOpen]       = useState(false);
   const [hoveredNavLink, setHoveredNavLink] = useState(null);
-  const [currentUser, setCurrentUser] = useState(() => getStoredUser());
+  const [currentUser,    setCurrentUser]    = useState(() => getStoredUser());
+
+  // Close menu on route change
+  useEffect(() => { setMenuOpen(false); }, [location.pathname]);
 
   useEffect(() => {
-    return subscribeToAuthChanges(() => {
-      setCurrentUser(getStoredUser());
-    });
+    return subscribeToAuthChanges(() => setCurrentUser(getStoredUser()));
   }, []);
 
   useEffect(() => {
     if (!currentUser?.id) return;
     let isActive = true;
-    async function loadCurrentUserProfile() {
+    async function loadProfile() {
       try {
-        const baseUrl = getApiBaseUrl();
-        const response = await fetch(`${baseUrl}/api/users/${currentUser.id}`);
-        if (!response.ok) return;
-        const profile = await response.json();
+        const res     = await fetch(`${getApiBaseUrl()}/api/users/${currentUser.id}`);
+        if (!res.ok) return;
+        const profile = await res.json();
         if (!isActive) return;
-        const nextUser = { ...currentUser, profile_image_url: profile.profile_image_url || null };
-        setCurrentUser(nextUser);
-        setStoredUser(nextUser);
+        const next = { ...currentUser, profile_image_url: profile.profile_image_url || null };
+        setCurrentUser(next);
+        setStoredUser(next);
       } catch {}
     }
-    loadCurrentUserProfile();
+    loadProfile();
     return () => { isActive = false; };
   }, [currentUser?.id]);
 
-  const displayName =
-    currentUser?.username ||
-    currentUser?.fullName ||
+  // Prevent body scroll when menu is open
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [menuOpen]);
+
+  const displayName = currentUser?.username || currentUser?.fullName ||
     (currentUser?.email ? currentUser.email.split("@")[0] : "User");
 
   const defaultAvatar = `data:image/svg+xml;utf8,${encodeURIComponent(`
@@ -49,8 +55,7 @@ export default function TopNav() {
 
   async function handleLogout() {
     try {
-      const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/logout`, {
+      await fetch(`${getApiBaseUrl()}/api/logout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId: currentUser?.id ?? null }),
@@ -61,10 +66,14 @@ export default function TopNav() {
   }
 
   const navItems = [
-    { id: "listings", label: "Listings",     path: "/booklistings" },
-    { id: "post",     label: "Post",          path: "/post" },
-    { id: "messages", label: "💬 Messages",   path: "/messages" },
+    { id: "listings", label: "Listings",   path: "/booklistings" },
+    { id: "post",     label: "Post",       path: "/post"         },
+    { id: "messages", label: "💬 Messages", path: "/messages"     },
   ];
+
+  if (currentUser?.role === "admin") {
+    navItems.push({ id: "admin", label: "⚡ Admin", path: "/admin" });
+  }
 
   return (
     <>
@@ -81,7 +90,7 @@ export default function TopNav() {
           border-bottom: 3px solid #FFBD00;
           box-shadow: 0 4px 24px rgba(0,0,0,0.5);
           position: relative;
-          z-index: 100;
+          z-index: 200;
           width: 100%;
           box-sizing: border-box;
           font-family: 'DM Sans', sans-serif;
@@ -89,22 +98,23 @@ export default function TopNav() {
 
         .topnav-logo {
           font-family: 'Bebas Neue', sans-serif;
-          font-size: 1.55rem;
+          font-size: 1.35rem;
           letter-spacing: 2px;
           color: #FFBD00;
           cursor: pointer;
           text-transform: uppercase;
           transition: opacity 0.2s;
           white-space: nowrap;
+          flex-shrink: 0;
         }
         .topnav-logo:hover { opacity: 0.8; }
 
+        /* Desktop links */
         .topnav-links {
           display: flex;
           align-items: center;
           gap: 4px;
         }
-
         .topnav-link {
           font-family: 'DM Sans', sans-serif;
           font-size: 0.78rem;
@@ -124,7 +134,6 @@ export default function TopNav() {
           border-color: rgba(255,189,0,0.3);
           background: rgba(255,189,0,0.07);
         }
-
         .topnav-logout {
           font-family: 'DM Sans', sans-serif;
           font-size: 0.78rem;
@@ -138,60 +147,131 @@ export default function TopNav() {
           border: 1.5px solid transparent;
           transition: color 0.18s, border-color 0.18s;
         }
-        .topnav-logout:hover {
-          color: #ff6b6b;
-          border-color: rgba(255,107,107,0.25);
-        }
-
+        .topnav-logout:hover { color: #ff6b6b; border-color: rgba(255,107,107,0.25); }
         .topnav-avatar-btn {
-          width: 34px;
-          height: 34px;
-          border-radius: 50%;
-          overflow: hidden;
-          border: 2px solid #FFBD00;
-          background: #1a1a1a;
-          padding: 0;
-          cursor: pointer;
-          display: inline-flex;
-          align-items: center;
-          justify-content: center;
-          flex-shrink: 0;
-          transition: box-shadow 0.2s;
-          margin-right: 6px;
+          width: 34px; height: 34px; border-radius: 50%; overflow: hidden;
+          border: 2px solid #FFBD00; background: #1a1a1a; padding: 0;
+          cursor: pointer; display: inline-flex; align-items: center;
+          justify-content: center; flex-shrink: 0;
+          transition: box-shadow 0.2s; margin-right: 6px;
         }
-        .topnav-avatar-btn:hover {
-          box-shadow: 0 0 0 3px rgba(255,189,0,0.28);
-        }
-        .topnav-avatar-btn img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
+        .topnav-avatar-btn:hover { box-shadow: 0 0 0 3px rgba(255,189,0,0.28); }
+        .topnav-avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
+        .topnav-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 4px; }
 
-        .topnav-divider {
-          width: 1px;
-          height: 20px;
-          background: rgba(255,255,255,0.1);
-          margin: 0 4px;
+        /* Hamburger button — hidden on desktop */
+        .topnav-hamburger {
+          display: none;
+          flex-direction: column;
+          justify-content: center;
+          align-items: center;
+          gap: 5px;
+          width: 40px; height: 40px;
+          background: none; border: none;
+          cursor: pointer; padding: 4px;
+          border-radius: 8px;
+          transition: background 0.15s;
+          flex-shrink: 0;
+        }
+        .topnav-hamburger:hover { background: rgba(255,189,0,0.1); }
+        .topnav-hamburger span {
+          display: block; width: 22px; height: 2px;
+          background: #FFBD00; border-radius: 2px;
+          transition: transform 0.25s, opacity 0.25s;
+          transform-origin: center;
+        }
+        .topnav-hamburger.open span:nth-child(1) { transform: translateY(7px) rotate(45deg); }
+        .topnav-hamburger.open span:nth-child(2) { opacity: 0; }
+        .topnav-hamburger.open span:nth-child(3) { transform: translateY(-7px) rotate(-45deg); }
+
+        /* Mobile drawer */
+        .topnav-drawer {
+          display: none;
+          position: fixed;
+          top: 67px; left: 0; right: 0; bottom: 0;
+          background: #0a0a0a;
+          z-index: 199;
+          flex-direction: column;
+          padding: 16px 0 32px;
+          overflow-y: auto;
+          border-top: 1px solid rgba(255,189,0,0.15);
+          animation: drawerSlide 0.22s ease;
+        }
+        @keyframes drawerSlide {
+          from { opacity: 0; transform: translateY(-8px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+        .topnav-drawer.open { display: flex; }
+
+        .drawer-user {
+          display: flex; align-items: center; gap: 12px;
+          padding: 16px 24px 20px;
+          border-bottom: 1px solid rgba(255,255,255,0.07);
+          margin-bottom: 8px;
+        }
+        .drawer-avatar {
+          width: 44px; height: 44px; border-radius: 50%;
+          border: 2px solid #FFBD00; object-fit: cover; flex-shrink: 0;
+        }
+        .drawer-name {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 20px; letter-spacing: 1.5px; color: #FFBD00;
+        }
+        .drawer-email { font-size: 11px; color: rgba(255,255,255,0.35); }
+
+        .drawer-item {
+          display: flex; align-items: center;
+          padding: 15px 24px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 15px; font-weight: 700;
+          letter-spacing: 1.5px; text-transform: uppercase;
+          color: rgba(255,255,255,0.75);
+          cursor: pointer;
+          border-left: 3px solid transparent;
+          transition: color 0.15s, background 0.15s, border-color 0.15s;
+        }
+        .drawer-item:hover, .drawer-item:active {
+          color: #FFBD00;
+          background: rgba(255,189,0,0.06);
+          border-left-color: #FFBD00;
+        }
+        .drawer-divider {
+          height: 1px; background: rgba(255,255,255,0.07);
+          margin: 8px 24px;
+        }
+        .drawer-logout {
+          display: flex; align-items: center;
+          padding: 15px 24px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 15px; font-weight: 700;
+          letter-spacing: 1.5px; text-transform: uppercase;
+          color: rgba(255,100,100,0.6);
+          cursor: pointer;
+          border-left: 3px solid transparent;
+          transition: color 0.15s, background 0.15s;
+        }
+        .drawer-logout:hover { color: #ff6b6b; background: rgba(255,100,100,0.06); }
+
+        @media (max-width: 680px) {
+          .topnav { padding: 0 1rem; }
+          .topnav-links { display: none; }
+          .topnav-hamburger { display: flex; }
+          .topnav-logo { font-size: 1.1rem; letter-spacing: 1px; }
         }
       `}</style>
+
       <nav className="topnav">
         <div className="topnav-logo" onClick={() => navigate("/booklistings")}>
           Peer To Peer Book Exchange
         </div>
 
+        {/* Desktop nav */}
         <div className="topnav-links">
           {currentUser && (
-            <button
-              className="topnav-avatar-btn"
-              onClick={() => navigate("/profile")}
-              title={displayName}
-              aria-label={`${displayName} profile`}
-            >
+            <button className="topnav-avatar-btn" onClick={() => navigate("/profile")} title={displayName}>
               <img src={avatarSrc} alt={displayName} />
             </button>
           )}
-
           {navItems.map((item) => (
             <span
               key={item.id}
@@ -203,19 +283,41 @@ export default function TopNav() {
               {item.label}
             </span>
           ))}
-
           <div className="topnav-divider" />
-
-          <span
-            className="topnav-logout"
-            onClick={handleLogout}
-            onMouseEnter={() => setHoveredNavLink("logout")}
-            onMouseLeave={() => setHoveredNavLink(null)}
-          >
-            Logout
-          </span>
+          <span className="topnav-logout" onClick={handleLogout}>Logout</span>
         </div>
+
+        {/* Hamburger */}
+        <button
+          className={`topnav-hamburger${menuOpen ? " open" : ""}`}
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label="Toggle menu"
+        >
+          <span /><span /><span />
+        </button>
       </nav>
+
+      {/* Mobile drawer */}
+      <div className={`topnav-drawer${menuOpen ? " open" : ""}`}>
+        {currentUser && (
+          <div className="drawer-user" onClick={() => navigate("/profile")}>
+            <img src={avatarSrc} alt={displayName} className="drawer-avatar" />
+            <div>
+              <div className="drawer-name">{displayName}</div>
+              <div className="drawer-email">{currentUser.email}</div>
+            </div>
+          </div>
+        )}
+
+        {navItems.map((item) => (
+          <div key={item.id} className="drawer-item" onClick={() => navigate(item.path)}>
+            {item.label}
+          </div>
+        ))}
+
+        <div className="drawer-divider" />
+        <div className="drawer-logout" onClick={handleLogout}>Logout</div>
+      </div>
     </>
   );
 }

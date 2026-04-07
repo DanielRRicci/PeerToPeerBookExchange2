@@ -132,6 +132,17 @@ function Lightbox({ images, startIndex, onClose }) {
           font-family: 'DM Sans', sans-serif; letter-spacing: 0.5px;
           pointer-events: none; white-space: nowrap; z-index: 1001;
         }
+
+        @media (max-width: 720px) {
+          .detail-page { padding: 1.2rem 0.75rem; }
+          .detail-layout { grid-template-columns: 1fr; gap: 16px; }
+          .detail-title { font-size: 28px; }
+          .detail-price { font-size: 38px; }
+          .detail-info { padding: 22px 18px; }
+          .gallery-thumb { width: 52px; height: 52px; }
+          .detail-btn-row { flex-direction: column; }
+          .detail-btn-contact, .detail-btn-back { width: 100%; text-align: center; }
+        }
       `}</style>
 
       <div className="lb-wrap" style={{ display: "contents" }}>

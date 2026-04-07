@@ -13,27 +13,32 @@ function formatTime(ts) {
   if (!ts) return "";
   const d   = new Date(ts);
   const now = new Date();
-  const isToday = d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  const isToday =
+    d.getDate()     === now.getDate()     &&
+    d.getMonth()    === now.getMonth()    &&
+    d.getFullYear() === now.getFullYear();
   if (isToday) return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   return d.toLocaleDateString([], { month: "short", day: "numeric" });
 }
 
 export default function Messages() {
-  const navigate     = useNavigate();
-  const location     = useLocation();
-  const currentUser  = getStoredUser();
-  const preselect    = location.state || {};
-  const baseUrl      = getApiBaseUrl();
-  const pollRef      = useRef(null);
-  const bottomRef    = useRef(null);
+  const navigate    = useNavigate();
+  const location    = useLocation();
+  const currentUser = getStoredUser();
+  const preselect   = location.state || {};
+  const baseUrl     = getApiBaseUrl();
+  const pollRef     = useRef(null);
+  const bottomRef   = useRef(null);
 
   const [conversations, setConversations] = useState([]);
-  const [activeConv, setActiveConv]       = useState(null);
-  const [messages, setMessages]           = useState([]);
-  const [draft, setDraft]                 = useState("");
-  const [loading, setLoading]             = useState(true);
-  const [sending, setSending]             = useState(false);
-  const [pendingChat, setPendingChat]     = useState(null);
+  const [activeConv,    setActiveConv]    = useState(null);
+  const [messages,      setMessages]      = useState([]);
+  const [draft,         setDraft]         = useState("");
+  const [loading,       setLoading]       = useState(true);
+  const [sending,       setSending]       = useState(false);
+  const [pendingChat,   setPendingChat]   = useState(null);
+  // Mobile: "list" shows sidebar, "chat" shows chat panel
+  const [mobileView,    setMobileView]    = useState("list");
 
   useEffect(() => {
     async function init() {
@@ -51,15 +56,17 @@ export default function Messages() {
             setActiveConv(existing);
             loadMessages(existing.other_user_id, existing.listing_id);
             markRead(existing.other_user_id, existing.listing_id);
+            setMobileView("chat");
           } else {
             setPendingChat({
-              other_user_id: preselect.receiverId,
+              other_user_id:   preselect.receiverId,
               other_user_name: preselect.receiverName || "Seller",
-              listing_id: preselect.listingId,
-              book_title: preselect.bookTitle || "",
+              listing_id:      preselect.listingId,
+              book_title:      preselect.bookTitle || "",
             });
             setActiveConv(null);
             setMessages([]);
+            setMobileView("chat");
           }
         }
       } catch (err) {
@@ -77,6 +84,7 @@ export default function Messages() {
     setMessages([]);
     loadMessages(conv.other_user_id, conv.listing_id);
     markRead(conv.other_user_id, conv.listing_id);
+    setMobileView("chat");
   }
 
   async function loadMessages(otherUserId, listingId) {
@@ -96,7 +104,9 @@ export default function Messages() {
       });
       setConversations((prev) =>
         prev.map((c) =>
-          c.other_user_id === otherUserId && c.listing_id === listingId ? { ...c, unread_count: 0 } : c
+          c.other_user_id === otherUserId && c.listing_id === listingId
+            ? { ...c, unread_count: 0 }
+            : c
         )
       );
     } catch {}
@@ -133,10 +143,10 @@ export default function Messages() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          senderId: currentUser.id,
+          senderId:   currentUser.id,
           receiverId: chatTarget.other_user_id,
-          listingId: chatTarget.listing_id,
-          content: text,
+          listingId:  chatTarget.listing_id,
+          content:    text,
         }),
       });
       if (!res.ok) throw new Error("Send failed");
@@ -148,7 +158,9 @@ export default function Messages() {
         const convData = await convRes.json();
         const convList = Array.isArray(convData) ? convData : [];
         setConversations(convList);
-        const newConv  = convList.find((c) => c.other_user_id === chatTarget.other_user_id && c.listing_id === chatTarget.listing_id);
+        const newConv  = convList.find(
+          (c) => c.other_user_id === chatTarget.other_user_id && c.listing_id === chatTarget.listing_id
+        );
         if (newConv) setActiveConv(newConv);
       }
 
@@ -185,265 +197,181 @@ export default function Messages() {
             url('https://images.unsplash.com/photo-1481627834876-b7833e8f5570?q=80&w=2128&auto=format&fit=crop') center/cover no-repeat fixed;
         }
         .msg-wrapper::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
+          content: ''; position: absolute; inset: 0; pointer-events: none;
           background-image:
             linear-gradient(rgba(255,189,0,0.04) 1px, transparent 1px),
             linear-gradient(90deg, rgba(255,189,0,0.04) 1px, transparent 1px);
           background-size: 60px 60px;
         }
 
-        /* ── Sidebar ── */
+        /* Sidebar */
         .msg-sidebar {
-          position: relative;
-          z-index: 1;
-          width: 300px;
-          min-width: 240px;
-          display: flex;
-          flex-direction: column;
+          position: relative; z-index: 1;
+          width: 300px; min-width: 240px; flex-shrink: 0;
+          display: flex; flex-direction: column;
           background: #fff;
           border-right: 3px solid #FFBD00;
           overflow-y: auto;
           box-shadow: 4px 0 20px rgba(0,0,0,0.3);
-          flex-shrink: 0;
         }
-
         .sidebar-header {
-          background: #0a0a0a;
-          padding: 18px 20px;
+          background: #0a0a0a; padding: 18px 20px;
           border-bottom: 3px solid #FFBD00;
           font-family: 'Bebas Neue', sans-serif;
-          font-size: 22px;
-          letter-spacing: 2px;
-          color: #FFBD00;
+          font-size: 22px; letter-spacing: 2px; color: #FFBD00;
           flex-shrink: 0;
+          display: flex; align-items: center; justify-content: space-between;
         }
 
         .conv-item {
-          padding: 14px 16px;
-          border-bottom: 1px solid #f5f5f5;
-          cursor: pointer;
-          border-left: 3px solid transparent;
+          padding: 14px 16px; border-bottom: 1px solid #f5f5f5;
+          cursor: pointer; border-left: 3px solid transparent;
           transition: background 0.15s, border-color 0.15s;
         }
-        .conv-item:hover   { background: #fffbea; }
-        .conv-item.active  { background: #fffbea; border-left-color: #FFBD00; }
+        .conv-item:hover  { background: #fffbea; }
+        .conv-item.active { background: #fffbea; border-left-color: #FFBD00; }
 
-        .conv-name {
-          font-weight: 700;
-          font-size: 13px;
-          color: #0a0a0a;
-        }
-        .conv-meta {
-          font-size: 11px;
-          color: #aaa;
-          margin-top: 2px;
-          white-space: nowrap;
-          overflow: hidden;
-          text-overflow: ellipsis;
-        }
+        .conv-name  { font-weight: 700; font-size: 13px; color: #0a0a0a; }
+        .conv-meta  { font-size: 11px; color: #aaa; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .conv-book-badge {
-          display: inline-block;
-          background: #0a0a0a;
-          color: #FFBD00;
-          font-size: 0.6rem;
-          font-weight: 700;
-          padding: 2px 8px;
-          border-radius: 20px;
-          margin-top: 5px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
+          display: inline-block; background: #0a0a0a; color: #FFBD00;
+          font-size: 0.6rem; font-weight: 700; padding: 2px 8px;
+          border-radius: 20px; margin-top: 5px;
+          text-transform: uppercase; letter-spacing: 0.5px;
         }
-        .conv-row { display: flex; justify-content: space-between; align-items: flex-start; }
-        .conv-time { font-size: 11px; color: #bbb; }
-        .unread-dot {
-          width: 8px; height: 8px;
-          border-radius: 50%;
-          background: #FFBD00;
-          flex-shrink: 0;
-          margin-top: 3px;
-        }
+        .conv-row   { display: flex; justify-content: space-between; align-items: flex-start; }
+        .conv-time  { font-size: 11px; color: #bbb; }
+        .unread-dot { width: 8px; height: 8px; border-radius: 50%; background: #FFBD00; flex-shrink: 0; margin-top: 3px; }
+        .sidebar-empty { padding: 16px; color: #bbb; font-size: 12px; line-height: 1.6; }
 
-        .sidebar-empty {
-          padding: 16px;
-          color: #bbb;
-          font-size: 12px;
-          line-height: 1.6;
-        }
-
-        /* ── Chat panel ── */
+        /* Chat panel */
         .msg-chat-panel {
-          position: relative;
-          z-index: 1;
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          overflow: hidden;
+          position: relative; z-index: 1; flex: 1;
+          display: flex; flex-direction: column; overflow: hidden;
         }
-
         .chat-header {
-          background: rgba(10,10,10,0.92);
-          backdrop-filter: blur(8px);
-          padding: 14px 20px;
-          border-bottom: 3px solid #FFBD00;
-          display: flex;
-          align-items: center;
-          gap: 12px;
-          flex-shrink: 0;
+          background: rgba(10,10,10,0.92); backdrop-filter: blur(8px);
+          padding: 14px 20px; border-bottom: 3px solid #FFBD00;
+          display: flex; align-items: center; gap: 12px; flex-shrink: 0;
+        }
+        .chat-header-back {
+          background: none; border: none; color: #FFBD00;
+          font-size: 22px; cursor: pointer; padding: 0 8px 0 0;
+          display: none; line-height: 1;
         }
         .chat-header-name {
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: 22px;
-          letter-spacing: 1.5px;
-          color: #fff;
+          font-family: 'Bebas Neue', sans-serif; font-size: 22px;
+          letter-spacing: 1.5px; color: #fff;
         }
         .chat-header-book {
-          background: #FFBD00;
-          color: #0a0a0a;
-          font-size: 0.65rem;
-          font-weight: 700;
-          padding: 3px 11px;
-          border-radius: 20px;
-          text-transform: uppercase;
-          letter-spacing: 0.5px;
+          background: #FFBD00; color: #0a0a0a;
+          font-size: 0.65rem; font-weight: 700; padding: 3px 11px;
+          border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;
         }
 
         .chat-messages {
-          flex: 1;
-          overflow-y: auto;
-          padding: 1.5rem;
-          display: flex;
-          flex-direction: column;
-          gap: 10px;
+          flex: 1; overflow-y: auto; padding: 1.5rem;
+          display: flex; flex-direction: column; gap: 10px;
         }
 
-        .bubble-wrap { display: flex; flex-direction: column; }
+        .bubble-wrap   { display: flex; flex-direction: column; }
         .bubble-mine {
-          max-width: 65%;
-          align-self: flex-end;
-          background: #0a0a0a;
-          color: #FFBD00;
-          padding: 10px 15px;
-          border-radius: 18px 18px 4px 18px;
+          max-width: 72%; align-self: flex-end;
+          background: #0a0a0a; color: #FFBD00;
+          padding: 10px 15px; border-radius: 18px 18px 4px 18px;
           box-shadow: 0 2px 10px rgba(0,0,0,0.25);
-          word-break: break-word;
-          font-size: 13px;
-          line-height: 1.5;
+          word-break: break-word; font-size: 14px; line-height: 1.5;
         }
         .bubble-theirs {
-          max-width: 65%;
-          align-self: flex-start;
-          background: #fff;
-          color: #0a0a0a;
-          padding: 10px 15px;
-          border-radius: 18px 18px 18px 4px;
+          max-width: 72%; align-self: flex-start;
+          background: #fff; color: #0a0a0a;
+          padding: 10px 15px; border-radius: 18px 18px 18px 4px;
           box-shadow: 0 2px 10px rgba(0,0,0,0.15);
-          word-break: break-word;
-          font-size: 13px;
-          line-height: 1.5;
+          word-break: break-word; font-size: 14px; line-height: 1.5;
         }
         .bubble-time-mine   { font-size: 10px; color: rgba(255,255,255,0.35); margin-top: 3px; text-align: right; }
-        .bubble-time-theirs { font-size: 10px; color: #bbb; margin-top: 3px; text-align: left; }
+        .bubble-time-theirs { font-size: 10px; color: #bbb; margin-top: 3px; }
 
         .chat-empty {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          color: rgba(255,255,255,0.35);
-          gap: 10px;
-          padding: 2rem;
-          text-align: center;
+          flex: 1; display: flex; flex-direction: column;
+          align-items: center; justify-content: center;
+          color: rgba(255,255,255,0.35); gap: 10px; padding: 2rem; text-align: center;
         }
         .chat-empty-icon { font-size: 3rem; }
         .chat-empty-text {
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: 26px;
-          letter-spacing: 2px;
-          color: rgba(255,255,255,0.4);
+          font-family: 'Bebas Neue', sans-serif; font-size: 26px;
+          letter-spacing: 2px; color: rgba(255,255,255,0.4);
         }
         .chat-empty-sub { font-size: 12px; color: rgba(255,255,255,0.25); }
 
         .chat-pending-prompt {
-          flex: 1;
-          display: flex;
-          flex-direction: column;
-          align-items: center;
-          justify-content: center;
-          color: rgba(255,255,255,0.5);
-          gap: 8px;
-          padding: 2rem;
-          text-align: center;
+          flex: 1; display: flex; flex-direction: column;
+          align-items: center; justify-content: center;
+          color: rgba(255,255,255,0.5); gap: 8px; padding: 2rem; text-align: center;
         }
         .chat-pending-icon { font-size: 2.5rem; }
-        .chat-pending-text {
-          font-weight: 700;
-          font-size: 14px;
-          color: rgba(255,255,255,0.7);
-        }
-        .chat-pending-sub { font-size: 12px; color: rgba(255,255,255,0.3); }
+        .chat-pending-text { font-weight: 700; font-size: 14px; color: rgba(255,255,255,0.7); }
+        .chat-pending-sub  { font-size: 12px; color: rgba(255,255,255,0.3); }
 
-        /* Input bar */
         .chat-input-bar {
-          display: flex;
-          gap: 10px;
-          padding: 14px 20px;
-          background: rgba(10,10,10,0.92);
-          backdrop-filter: blur(8px);
-          border-top: 3px solid #FFBD00;
-          flex-shrink: 0;
+          display: flex; gap: 10px; padding: 14px 20px;
+          background: rgba(10,10,10,0.92); backdrop-filter: blur(8px);
+          border-top: 3px solid #FFBD00; flex-shrink: 0;
         }
         .chat-text-input {
-          flex: 1;
-          padding: 11px 16px;
-          border-radius: 25px;
+          flex: 1; padding: 12px 16px; border-radius: 25px;
           border: 1.5px solid rgba(255,189,0,0.2);
-          background: rgba(255,255,255,0.06);
-          color: #fff;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 13px;
-          outline: none;
+          background: rgba(255,255,255,0.06); color: #fff;
+          font-family: 'DM Sans', sans-serif; font-size: 15px; outline: none;
           transition: border-color 0.2s, background 0.2s;
+          -webkit-appearance: none;
         }
         .chat-text-input::placeholder { color: rgba(255,255,255,0.3); }
-        .chat-text-input:focus {
-          border-color: #FFBD00;
-          background: rgba(255,189,0,0.06);
-        }
+        .chat-text-input:focus { border-color: #FFBD00; background: rgba(255,189,0,0.06); }
 
         .chat-send-btn {
-          background: #FFBD00;
-          color: #0a0a0a;
-          border: none;
-          border-radius: 25px;
-          padding: 0 22px;
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: 16px;
-          letter-spacing: 1.5px;
-          cursor: pointer;
-          transition: background 0.15s, transform 0.15s;
-          flex-shrink: 0;
+          background: #FFBD00; color: #0a0a0a; border: none; border-radius: 25px;
+          padding: 0 22px; font-family: 'Bebas Neue', sans-serif;
+          font-size: 16px; letter-spacing: 1.5px; cursor: pointer;
+          transition: background 0.15s, transform 0.15s; flex-shrink: 0;
+          min-width: 70px; min-height: 46px;
         }
         .chat-send-btn:hover:not(:disabled) { background: #e6a800; transform: translateY(-1px); }
         .chat-send-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
-        /* No-message hint */
-        .no-msgs-hint {
-          color: rgba(255,255,255,0.25);
-          text-align: center;
-          margin-top: 2rem;
-          font-size: 12px;
+        .no-msgs-hint { color: rgba(255,255,255,0.25); text-align: center; margin-top: 2rem; font-size: 12px; }
+
+        /* ── Mobile ── */
+        @media (max-width: 640px) {
+          .msg-sidebar {
+            width: 100vw; min-width: unset; flex-shrink: 0;
+            border-right: none;
+            display: none;
+          }
+          .msg-sidebar.mobile-visible { display: flex; }
+
+          .msg-chat-panel { display: none; }
+          .msg-chat-panel.mobile-visible { display: flex; }
+
+          .chat-header-back { display: block; }
+
+          .chat-messages { padding: 1rem; }
+
+          .bubble-mine, .bubble-theirs { max-width: 85%; font-size: 15px; }
+
+          .chat-input-bar { padding: 10px 12px; gap: 8px; }
+          .chat-text-input { font-size: 16px; padding: 12px 14px; } /* 16px prevents iOS zoom */
+          .chat-send-btn { padding: 0 16px; font-size: 15px; }
         }
       `}</style>
 
       <div className="msg-wrapper">
 
         {/* Sidebar */}
-        <aside className="msg-sidebar">
-          <div className="sidebar-header">Messages</div>
+        <aside className={`msg-sidebar${mobileView === "list" ? " mobile-visible" : ""}`}>
+          <div className="sidebar-header">
+            <span>Messages</span>
+          </div>
 
           {loading ? (
             <div className="sidebar-empty">Loading…</div>
@@ -455,7 +383,7 @@ export default function Messages() {
             conversations.map((conv) => {
               const isActive =
                 activeConv?.other_user_id === conv.other_user_id &&
-                activeConv?.listing_id === conv.listing_id;
+                activeConv?.listing_id    === conv.listing_id;
               return (
                 <div
                   key={`${conv.other_user_id}-${conv.listing_id}`}
@@ -464,7 +392,7 @@ export default function Messages() {
                 >
                   <div className="conv-row">
                     <div className="conv-name">{conv.other_user_name}</div>
-                    <div style={{ display: "flex", alignItems: "center", gap: "5px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 5 }}>
                       {conv.unread_count > 0 && <div className="unread-dot" />}
                       <span className="conv-time">{formatTime(conv.last_sent_at)}</span>
                     </div>
@@ -478,7 +406,7 @@ export default function Messages() {
         </aside>
 
         {/* Chat panel */}
-        <div className="msg-chat-panel">
+        <div className={`msg-chat-panel${mobileView === "chat" ? " mobile-visible" : ""}`}>
           {!chatTarget ? (
             <div className="chat-empty">
               <div className="chat-empty-icon">💬</div>
@@ -488,7 +416,15 @@ export default function Messages() {
           ) : (
             <>
               <div className="chat-header">
-                <div className="chat-header-name">{chatTarget.other_user_name}</div>
+                {/* Back button — mobile only */}
+                <button
+                  className="chat-header-back"
+                  onClick={() => setMobileView("list")}
+                  aria-label="Back to conversations"
+                >‹</button>
+                <div>
+                  <div className="chat-header-name">{chatTarget.other_user_name}</div>
+                </div>
                 <div className="chat-header-book">{chatTarget.book_title}</div>
               </div>
 
@@ -518,7 +454,7 @@ export default function Messages() {
               <div className="chat-input-bar">
                 <input
                   className="chat-text-input"
-                  placeholder="Type a message… (Enter to send)"
+                  placeholder="Type a message…"
                   value={draft}
                   onChange={(e) => setDraft(e.target.value)}
                   onKeyDown={handleKeyDown}

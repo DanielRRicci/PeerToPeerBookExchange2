@@ -192,7 +192,19 @@ function Profile() {
             background: linear-gradient(rgba(0,0,0,0.72),rgba(0,0,0,0.72)),
               url('https://images.unsplash.com/photo-1481627834876-b7833e8f5570?q=80&w=2128&auto=format&fit=crop') center/cover no-repeat fixed;
           }
-        `}</style>
+  
+        @media (max-width: 640px) {
+          .profile-page { padding: 1rem 0.75rem; }
+          .profile-card { border-radius: 14px; }
+          .profile-card-header { padding: 24px 20px 20px; }
+          .profile-card-body { padding: 16px 16px 20px; }
+          .profile-name { font-size: 28px; }
+          .modal-grid { grid-template-columns: 1fr; }
+          .modal-card { border-radius: 14px; }
+          .listing-row { gap: 6px; }
+          .listing-actions { flex-wrap: wrap; }
+        }
+      `}</style>
         <div className="profile-loading">Loading…</div>
       </>
     );

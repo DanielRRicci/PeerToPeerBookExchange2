@@ -672,6 +672,24 @@ function BookListings() {
         .delete-modal h3 { margin-bottom: 8px; color: #0a0a0a; }
         .delete-modal p { color: #555; margin-bottom: 18px; }
         .delete-modal-actions { display: flex; justify-content: center; gap: 10px; }
+
+        /* ── Mobile ── */
+        @media (max-width: 700px) {
+          .listings-container { flex-direction: column; padding: 1rem; gap: 1rem; }
+          .listings-sidebar { flex: none; width: 100%; }
+          .listings-grid { grid-template-columns: 1fr; }
+          .sidebar-body { padding: 14px; }
+          .radio-group { gap: 4px; }
+          .radio-chip { font-size: 11px; padding: 4px 9px; }
+          .book-card-img, .book-card-img-notes { height: 140px; }
+          .card-btn-group { flex-wrap: wrap; }
+          .btn-primary, .btn-secondary, .btn-danger,
+          .btn-approve, .btn-admin, .btn-sold-toggle { font-size: 0.7rem; padding: 6px 10px; }
+          .modal-grid { grid-template-columns: 1fr; }
+          .modal-card { max-width: 100%; margin: 0; border-radius: 14px; }
+          .admin-banner { padding: 8px 1rem; }
+          .admin-banner-text { font-size: 11px; }
+        }
       `}</style>
 
       {/* Admin banner */}

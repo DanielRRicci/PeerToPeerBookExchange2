@@ -475,7 +475,31 @@ export default function AdminDashboard() {
           border: 3px solid #f0f0f0; border-top-color: #FFBD00;
           border-radius: 50%; animation: spin 0.7s linear infinite;
         }
-        @keyframes spin { to { transform: rotate(360deg); } }
+@keyframes spin { to { transform: rotate(360deg); } }
+        @media (max-width: 680px) {
+          .admin-header { padding: 14px 16px; flex-wrap: wrap; gap: 8px; }
+          .admin-title { font-size: 24px; }
+          .admin-tabs { padding: 0 8px; overflow-x: auto; gap: 0; }
+          .admin-tab { padding: 10px 12px; font-size: 10px; white-space: nowrap; }
+          .admin-body { padding: 16px; }
+          .stats-grid { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+          .charts-row { grid-template-columns: 1fr; }
+          .chart-inner { flex-direction: column; align-items: flex-start; }
+          .admin-table th, .admin-table td { padding: 8px 10px; font-size: 12px; }
+          /* Hide less critical columns on mobile */
+          .admin-table th:nth-child(2),
+          .admin-table td:nth-child(2),
+          .admin-table th:nth-child(5),
+          .admin-table td:nth-child(5) { display: none; }
+          .admin-back { font-size: 10px; padding: 5px 10px; }
+          .tbl-btn { font-size: 10px; padding: 4px 8px; }
+          .filter-chips { gap: 5px; }
+          .filter-chip { font-size: 10px; padding: 4px 10px; }
+          .modal-box { padding: 20px; }
+          .log-item { gap: 8px; }
+          .log-action { font-size: 12px; }
+        }
+
 
         /* Under Review callout banner */
         .review-banner {

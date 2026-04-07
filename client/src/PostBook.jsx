@@ -480,6 +480,17 @@ function PostBook() {
           transition: color 0.2s;
         }
         .back-link:hover { color: #FFBD00; }
+
+        @media (max-width: 640px) {
+          .post-page { padding: 1rem 0.75rem; }
+          .post-card-header { padding: 20px 18px 18px; }
+          .post-heading { font-size: 32px; }
+          .post-card-body { padding: 18px 18px 24px; }
+          .form-grid { grid-template-columns: 1fr; }
+          .img-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
+          .mode-toggle { width: 100%; }
+          .mode-btn { flex: 1; text-align: center; padding: 10px 8px; }
+        }
       `}</style>
 
       <div className="post-page">
