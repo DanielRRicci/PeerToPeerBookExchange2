@@ -120,7 +120,6 @@ async function ensureSchema() {
     )
   `);
 
-  // Notes table — uses file_url to support all file types
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Notes (
       note_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -139,6 +138,10 @@ async function ensureSchema() {
     'ALTER TABLE Users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE Users ADD COLUMN verification_code_hash VARCHAR(255)',
     'ALTER TABLE Users ADD COLUMN verification_expires_at DATETIME',
+    'ALTER TABLE Users ADD COLUMN role ENUM(\'student\', \'admin\') NOT NULL DEFAULT \'student\'',
+    'ALTER TABLE Users ADD COLUMN is_suspended BOOLEAN NOT NULL DEFAULT FALSE',
+    'ALTER TABLE Users ADD COLUMN suspended_at TIMESTAMP NULL DEFAULT NULL',
+    'ALTER TABLE Users ADD COLUMN suspended_reason VARCHAR(500) NULL DEFAULT NULL',
   ];
 
   for (const statement of addColumnStatements) {
@@ -149,19 +152,27 @@ async function ensureSchema() {
     }
   }
 
-  // Add file_type column to Notes if it doesn't exist yet
   try {
     await runQuery('ALTER TABLE Notes ADD COLUMN file_type VARCHAR(100)');
   } catch (error) {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
 
-  // Add status column to BookListings if it doesn't exist yet
-  try {
-    await runQuery(`ALTER TABLE BookListings ADD COLUMN status VARCHAR(20) NOT NULL DEFAULT 'Available'`);
-  } catch (error) {
-    if (error.code !== "ER_DUP_FIELDNAME") throw error;
-  }
+  // ModerationLog table
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS ModerationLog (
+      log_id         INT AUTO_INCREMENT PRIMARY KEY,
+      admin_id       INT NOT NULL,
+      action_type    VARCHAR(80) NOT NULL,
+      target_type    ENUM('listing','user','note') NOT NULL,
+      target_id      INT NOT NULL,
+      notes          TEXT,
+      created_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (admin_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+      INDEX idx_mod_admin   (admin_id),
+      INDEX idx_mod_created (created_at)
+    )
+  `);
 }
 
 const r2Client = new S3Client({
@@ -193,10 +204,10 @@ const upload = multer({
 function getImageExtension(mimetype) {
   switch (mimetype) {
     case "image/jpeg": return ".jpg";
-    case "image/png": return ".png";
+    case "image/png":  return ".png";
     case "image/webp": return ".webp";
-    case "image/gif": return ".gif";
-    default: return "";
+    case "image/gif":  return ".gif";
+    default:           return "";
   }
 }
 
@@ -230,6 +241,13 @@ app.use(
 );
 
 app.use(express.json());
+
+// ─── Make pool available to admin router middleware ───────────────────────────
+app.set('db', pool);
+
+// ─── Admin routes ─────────────────────────────────────────────────────────────
+const adminRouter = require('./routes/admin');
+app.use('/api/admin', adminRouter);
 
 app.get("/health", (req, res) => {
   res.json({ ok: true, message: "API running" });
@@ -283,28 +301,29 @@ app.put("/BookListings/:id", async (req, res, next) => {
       return res.status(400).json({ error: "title, author, price, and book_condition are required." });
     }
 
-    const cleanedTitle = String(title).trim();
-    const cleanedAuthor = String(author).trim();
-    const cleanedEdition = edition ? String(edition).trim() : null;
-    const cleanedIsbn = isbn ? String(isbn).trim() : null;
-    const cleanedCourseCode = course_code ? String(course_code).trim() : null;
-    const cleanedCondition = String(book_condition).trim();
-    const cleanedNotes = notes ? String(notes).trim() : null;
-    const numericPrice = Number(price);
+    const cleanedTitle      = String(title).trim();
+    const cleanedAuthor     = String(author).trim();
+    const cleanedEdition    = edition      ? String(edition).trim()      : null;
+    const cleanedIsbn       = isbn         ? String(isbn).trim()         : null;
+    const cleanedCourseCode = course_code  ? String(course_code).trim()  : null;
+    const cleanedCondition  = String(book_condition).trim();
+    const cleanedNotes      = notes        ? String(notes).trim()        : null;
+    const numericPrice      = Number(price);
 
     if (Number.isNaN(numericPrice) || numericPrice < 0) {
       return res.status(400).json({ error: "Price must be a valid non-negative number." });
     }
 
-    const allowedStatuses = ["Available", "Pending", "Sold"];
-    const cleanedStatus = allowedStatuses.includes(status) ? status : "Available";
+    const allowedStatuses = ["Pending", "Active", "Sold", "Removed", "Under Review"];
+    const cleanedStatus = allowedStatuses.includes(status) ? status : "Active";
 
     await runQuery(
       `UPDATE BookListings
        SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
            book_condition = ?, price = ?, notes = ?, status = ?
        WHERE listing_id = ?`,
-      [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode, cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
+      [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode,
+       cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
     );
 
     const updated = await runQuery(
@@ -327,10 +346,8 @@ app.put("/BookListings/:id", async (req, res, next) => {
 app.delete("/BookListings/:id", async (req, res, next) => {
   try {
     const { id } = req.params;
-
     const existing = await runQuery("SELECT listing_id FROM BookListings WHERE listing_id = ? LIMIT 1", [id]);
     if (existing.length === 0) return res.status(404).json({ error: "Listing not found." });
-
     await runQuery("DELETE FROM BookListings WHERE listing_id = ?", [id]);
     res.json({ success: true, message: "Listing deleted successfully." });
   } catch (err) {
@@ -338,7 +355,7 @@ app.delete("/BookListings/:id", async (req, res, next) => {
   }
 });
 
-// POST /BookListings
+// POST /BookListings — new listings start as Pending (awaiting admin approval)
 app.post("/BookListings", async (req, res, next) => {
   try {
     const { user_id, title, author, edition, isbn, price, course_code, book_condition, notes, image_url } = req.body;
@@ -347,14 +364,14 @@ app.post("/BookListings", async (req, res, next) => {
       return res.status(400).json({ error: "Missing required fields" });
     }
 
-    const cleanedTitle = String(title).trim();
-    const cleanedAuthor = String(author).trim();
-    const cleanedEdition = edition ? String(edition).trim() : null;
-    const cleanedIsbn = isbn ? String(isbn).trim() : null;
+    const cleanedTitle      = String(title).trim();
+    const cleanedAuthor     = String(author).trim();
+    const cleanedEdition    = edition     ? String(edition).trim()     : null;
+    const cleanedIsbn       = isbn        ? String(isbn).trim()        : null;
     const cleanedCourseCode = course_code ? String(course_code).trim() : null;
-    const cleanedCondition = String(book_condition).trim();
-    const cleanedNotes = notes ? String(notes).trim() : null;
-    const numericPrice = Number(price);
+    const cleanedCondition  = String(book_condition).trim();
+    const cleanedNotes      = notes       ? String(notes).trim()       : null;
+    const numericPrice      = Number(price);
 
     if (Number.isNaN(numericPrice) || numericPrice < 0) {
       return res.status(400).json({ error: "Price must be a valid non-negative number." });
@@ -362,9 +379,10 @@ app.post("/BookListings", async (req, res, next) => {
 
     const [result] = await pool.execute(
       `INSERT INTO BookListings
-      (user_id, title, author, \`Edition\`, isbn, price, course_code, book_condition, notes, status, image_url)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Available', ?)`,
-      [user_id, cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, numericPrice, cleanedCourseCode, cleanedCondition, cleanedNotes, image_url || null]
+       (user_id, title, author, \`Edition\`, isbn, price, course_code, book_condition, notes, status, image_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?)`,
+      [user_id, cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn,
+       numericPrice, cleanedCourseCode, cleanedCondition, cleanedNotes, image_url || null]
     );
 
     res.status(201).json({ message: "Book successfully added!", listing_id: result.insertId });
@@ -373,7 +391,7 @@ app.post("/BookListings", async (req, res, next) => {
   }
 });
 
-// GET /Notes — supports ?userId= for profile page
+// GET /Notes
 app.get("/Notes", async (req, res, next) => {
   try {
     const { userId } = req.query;
@@ -419,7 +437,7 @@ app.delete("/Notes/:id", async (req, res, next) => {
   }
 });
 
-// ---- authentication + utility endpoints ----
+// ── Auth & utility ────────────────────────────────────────────────────────────
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -465,28 +483,24 @@ app.post('/api/register', async (req, res) => {
       [normalizedEmail]
     );
 
-    const verificationCode = generateVerificationCode();
-    const verificationHash = hashVerificationCode(verificationCode);
+    const verificationCode     = generateVerificationCode();
+    const verificationHash     = hashVerificationCode(verificationCode);
     const verificationExpiresAt = getVerificationExpiryDate();
 
     if (existing.length > 0) {
       const currentUser = existing[0];
-
       if (currentUser.is_verified) {
         return res.status(409).json({ error: 'Email is already registered.' });
       }
-
       await runQuery(
         `UPDATE Users SET verification_code_hash = ?, verification_expires_at = ? WHERE user_id = ?`,
         [verificationHash, verificationExpiresAt, currentUser.user_id]
       );
-
       await sendVerificationEmail(normalizedEmail, verificationCode);
       return res.status(200).json({ message: 'Verification code resent. Please check your email.' });
     }
 
     const passwordHash = hashPassword(String(password));
-
     const result = await runQuery(
       `INSERT INTO Users (full_name, email, password_hash, is_verified, verification_code_hash, verification_expires_at)
        VALUES (?, ?, ?, ?, ?, ?)`,
@@ -494,7 +508,6 @@ app.post('/api/register', async (req, res) => {
     );
 
     await sendVerificationEmail(normalizedEmail, verificationCode);
-
     return res.status(201).json({
       message: 'Account created. Check your email for the verification code.',
       userId: result.insertId,
@@ -513,7 +526,7 @@ app.post('/api/verify-email', async (req, res) => {
   }
 
   const normalizedEmail = String(email).trim().toLowerCase();
-  const normalizedCode = String(code).trim();
+  const normalizedCode  = String(code).trim();
 
   if (!isValidUwmEmail(normalizedEmail)) {
     return res.status(400).json({ error: 'Email must be a valid UWM email address.' });
@@ -576,17 +589,17 @@ app.post('/api/login', async (req, res) => {
 
   try {
     const users = await runQuery(
-      'SELECT user_id, full_name, email, password_hash, is_verified, profile_image_url FROM Users WHERE email = ? LIMIT 1',
+      'SELECT user_id, full_name, email, password_hash, is_verified, profile_image_url, role FROM Users WHERE email = ? LIMIT 1',
       [normalizedEmail]
     );
 
     if (users.length === 0) return res.status(401).json({ error: 'Invalid email or password.' });
 
     const user = users[0];
-    
+
     if (!user.is_verified) {
-      const verificationCode = generateVerificationCode();
-      const verificationHash = hashVerificationCode(verificationCode);
+      const verificationCode      = generateVerificationCode();
+      const verificationHash      = hashVerificationCode(verificationCode);
       const verificationExpiresAt = getVerificationExpiryDate();
 
       await runQuery(
@@ -601,13 +614,23 @@ app.post('/api/login', async (req, res) => {
         requiresVerification: true,
       });
     }
-    
+
+    if (user.is_suspended) {
+      return res.status(403).json({ error: 'Your account has been suspended. Please contact support.' });
+    }
+
     const passwordIsValid = verifyPassword(String(password), user.password_hash);
     if (!passwordIsValid) return res.status(401).json({ error: 'Invalid email or password.' });
 
     return res.status(200).json({
       message: 'Login successful.',
-      user: { id: user.user_id, fullName: user.full_name, email: user.email, profile_image_url: user.profile_image_url },
+      user: {
+        id: user.user_id,
+        fullName: user.full_name,
+        email: user.email,
+        profile_image_url: user.profile_image_url,
+        role: user.role,           // ← included so frontend knows admin status
+      },
     });
   } catch (error) {
     console.error('Error logging in:', error);
@@ -619,12 +642,12 @@ app.post('/api/logout', async (_req, res) => {
   return res.status(200).json({ message: 'Logout successful.' });
 });
 
-// PROFILE ROUTES
+// ── Profile routes ────────────────────────────────────────────────────────────
 
 app.get('/api/users/:id', async (req, res, next) => {
   try {
     const users = await runQuery(
-      'SELECT user_id, full_name, email, profile_image_url, created_at FROM Users WHERE user_id = ? LIMIT 1',
+      'SELECT user_id, full_name, email, profile_image_url, role, created_at FROM Users WHERE user_id = ? LIMIT 1',
       [req.params.id]
     );
     if (users.length === 0) return res.status(404).json({ error: 'User not found.' });
@@ -659,14 +682,14 @@ app.put('/api/listings/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'title, author, price, and book_condition are required.' });
     }
 
-    const cleanedTitle = String(title).trim();
-    const cleanedAuthor = String(author).trim();
-    const cleanedEdition = edition ? String(edition).trim() : null;
-    const cleanedIsbn = isbn ? String(isbn).trim() : null;
+    const cleanedTitle      = String(title).trim();
+    const cleanedAuthor     = String(author).trim();
+    const cleanedEdition    = edition     ? String(edition).trim()     : null;
+    const cleanedIsbn       = isbn        ? String(isbn).trim()        : null;
     const cleanedCourseCode = course_code ? String(course_code).trim() : null;
-    const cleanedCondition = String(book_condition).trim();
-    const cleanedNotes = notes ? String(notes).trim() : null;
-    const numericPrice = Number(price);
+    const cleanedCondition  = String(book_condition).trim();
+    const cleanedNotes      = notes       ? String(notes).trim()       : null;
+    const numericPrice      = Number(price);
 
     if (Number.isNaN(numericPrice) || numericPrice < 0) {
       return res.status(400).json({ error: 'Price must be a valid non-negative number.' });
@@ -675,13 +698,14 @@ app.put('/api/listings/:id', async (req, res, next) => {
     const existing = await runQuery('SELECT listing_id, status FROM BookListings WHERE listing_id = ? LIMIT 1', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Listing not found.' });
 
-    const allowedStatuses = ["Available", "Pending", "Sold"];
-    const cleanedStatus = allowedStatuses.includes(status) ? status : (existing[0].status || 'Available');
+    const allowedStatuses = ["Pending", "Active", "Sold", "Removed", "Under Review"];
+    const cleanedStatus = allowedStatuses.includes(status) ? status : (existing[0].status || 'Active');
 
     await runQuery(
       `UPDATE BookListings SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
               book_condition = ?, price = ?, notes = ?, status = ? WHERE listing_id = ?`,
-      [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode, cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
+      [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode,
+       cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
     );
 
     const updated = await runQuery(
@@ -737,10 +761,10 @@ app.post("/api/images", upload.array("images", 6), async (req, res, next) => {
     const uploadedImages = [];
 
     for (let i = 0; i < req.files.length; i++) {
-      const file = req.files[i];
+      const file        = req.files[i];
       const orderNumber = existingCount + i + 1;
-      const objectKey = buildPostImageKey(numericListingId, orderNumber, file.mimetype);
-      const bucketName = process.env.R2_BUCKET_NAME || process.env.R2_BUCKET;
+      const objectKey   = buildPostImageKey(numericListingId, orderNumber, file.mimetype);
+      const bucketName  = process.env.R2_BUCKET_NAME || process.env.R2_BUCKET;
 
       if (!bucketName) return res.status(500).json({ error: "Missing R2 bucket environment variable." });
 
@@ -757,7 +781,10 @@ app.post("/api/images", upload.array("images", 6), async (req, res, next) => {
         await runQuery("UPDATE BookListings SET image_url = ? WHERE listing_id = ?", [publicUrl, numericListingId]);
       }
 
-      uploadedImages.push({ id: insertResult.insertId, listing_id: numericListingId, order_number: orderNumber, object_key: objectKey, file_type: file.mimetype, image_url: publicUrl });
+      uploadedImages.push({
+        id: insertResult.insertId, listing_id: numericListingId, order_number: orderNumber,
+        object_key: objectKey, file_type: file.mimetype, image_url: publicUrl,
+      });
     }
 
     res.status(201).json({ message: "Images uploaded successfully.", images: uploadedImages });
@@ -774,8 +801,8 @@ app.get("/api/upload-url", async (req, res, next) => {
     }
 
     const allowedFolders = ["Profile_Pic", "Post_Pic", "Notes"];
-    const targetFolder = allowedFolders.includes(folder) ? folder : "Profile_Pic";
-    const key = `${targetFolder}/${Date.now()}-${filename}`;
+    const targetFolder   = allowedFolders.includes(folder) ? folder : "Profile_Pic";
+    const key            = `${targetFolder}/${Date.now()}-${filename}`;
 
     const command = new PutObjectCommand({
       Bucket: process.env.R2_BUCKET_NAME,
@@ -800,7 +827,6 @@ app.put("/api/users/:id/avatar", async (req, res, next) => {
   try {
     const { avatarUrl } = req.body;
     if (!avatarUrl) return res.status(400).json({ error: "avatarUrl is required." });
-
     await runQuery("UPDATE Users SET profile_image_url = ? WHERE user_id = ?", [avatarUrl, req.params.id]);
     res.json({ success: true, profile_image_url: avatarUrl });
   } catch (err) {
@@ -808,11 +834,7 @@ app.put("/api/users/:id/avatar", async (req, res, next) => {
   }
 });
 
-/*PROFILE ROUTES END*/
-
-// ─────────────────────────────────────────────────────────────────────────────
-// MESSAGING ROUTES
-// ─────────────────────────────────────────────────────────────────────────────
+// ── Messaging routes ──────────────────────────────────────────────────────────
 
 app.get("/api/messages/conversations", async (req, res, next) => {
   try {
@@ -829,15 +851,15 @@ app.get("/api/messages/conversations", async (req, res, next) => {
 
     const conversations = await Promise.all(
       pairs.map(async ({ other_user_id, listing_id }) => {
-        const [lastMsg] = await runQuery(
+        const [lastMsg]    = await runQuery(
           `SELECT content, sent_at FROM Messages WHERE listing_id = ?
            AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
            ORDER BY sent_at DESC LIMIT 1`,
           [listing_id, userId, other_user_id, other_user_id, userId]
         );
-        const [otherUser] = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [other_user_id]);
-        const [book] = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listing_id]);
-        const [unreadRow] = await runQuery(
+        const [otherUser]  = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [other_user_id]);
+        const [book]       = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listing_id]);
+        const [unreadRow]  = await runQuery(
           `SELECT COUNT(*) AS unread_count FROM Messages WHERE listing_id = ? AND sender_id = ? AND receiver_id = ? AND is_read = FALSE`,
           [listing_id, other_user_id, userId]
         );
@@ -846,10 +868,10 @@ app.get("/api/messages/conversations", async (req, res, next) => {
           other_user_id,
           other_user_name: otherUser?.full_name || "Unknown",
           listing_id,
-          book_title: book?.title || "Unknown Book",
-          last_message: lastMsg?.content || "",
-          last_sent_at: lastMsg?.sent_at || null,
-          unread_count: unreadRow?.unread_count || 0,
+          book_title:      book?.title          || "Unknown Book",
+          last_message:    lastMsg?.content      || "",
+          last_sent_at:    lastMsg?.sent_at      || null,
+          unread_count:    unreadRow?.unread_count || 0,
         };
       })
     );
@@ -921,11 +943,7 @@ app.put("/api/messages/read", async (req, res, next) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// END MESSAGING ROUTES
-// ─────────────────────────────────────────────────────────────────────────────
-
-// Error handler
+// ── Error handler ─────────────────────────────────────────────────────────────
 app.use((err, req, res, next) => {
   console.error(err);
   if (String(err.message || "").startsWith("CORS blocked")) {
