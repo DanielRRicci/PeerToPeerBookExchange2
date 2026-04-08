@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { getApiBaseUrl } from "./apiBaseUrl";
-import { getStoredUser, setStoredUser } from "./auth";
+import { clearStoredUser, getStoredUser, setStoredUser } from "./auth";
 import { Link, useNavigate } from "react-router-dom";
 
 function fileTypeLabel(mimeType) {
@@ -53,6 +53,15 @@ function Profile() {
   const [notes,           setNotes]           = useState([]);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [showEditModal,   setShowEditModal]   = useState(false);
+  const [accountData,     setAccountData]     = useState({
+    username: "",
+    currentPassword: "",
+    newPassword: "",
+    confirmDelete: "",
+  });
+  const [accountErrors,   setAccountErrors]   = useState({});
+  const [accountStatus,   setAccountStatus]   = useState({ username: "", password: "", delete: "" });
+  const [accountBusy,     setAccountBusy]     = useState({ username: false, password: false, delete: false });
   const [editData,        setEditData]        = useState({
     listing_id: null, title: "", author: "", edition: "",
     isbn: "", course_code: "", book_condition: "", price: "", notes: "", status: "Active",
@@ -72,6 +81,128 @@ function Profile() {
     fetch(`${baseUrl}/Notes?userId=${userId}`).then((r) => r.json()).then((d) => setNotes(Array.isArray(d) ? d : []));
   }, []);
 
+  useEffect(() => {
+    if (!user?.full_name) return;
+    setAccountData((prev) => ({ ...prev, username: user.full_name }));
+  }, [user?.full_name]);
+
+  function setSectionMessage(section, message = "", error = "") {
+    setAccountStatus((prev) => ({ ...prev, [section]: message }));
+    setAccountErrors((prev) => ({ ...prev, [section]: error }));
+  }
+
+  function validateUsername(username) {
+    const trimmed = String(username || "").trim();
+    if (!/^[A-Za-z0-9]{2,30}$/.test(trimmed)) {
+      return "Username must be 2-30 characters and use letters or numbers only.";
+    }
+    return "";
+  }
+
+  async function handleUsernameUpdate(e) {
+    e.preventDefault();
+    const usernameError = validateUsername(accountData.username);
+    if (usernameError) {
+      setSectionMessage("username", "", usernameError);
+      return;
+    }
+
+    setAccountBusy((prev) => ({ ...prev, username: true }));
+    setSectionMessage("username");
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users/${currentUser?.id}/username`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
+        body: JSON.stringify({ username: accountData.username }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update username.");
+
+      setUser(data.user);
+      const storedUser = getStoredUser();
+      if (storedUser) {
+        setStoredUser({ ...storedUser, fullName: data.user.full_name });
+      }
+      setAccountData((prev) => ({ ...prev, username: data.user.full_name }));
+      setSectionMessage("username", data.message || "Username updated.");
+    } catch (err) {
+      setSectionMessage("username", "", err.message || "Could not update username.");
+    } finally {
+      setAccountBusy((prev) => ({ ...prev, username: false }));
+    }
+  }
+
+  async function handlePasswordUpdate(e) {
+    e.preventDefault();
+    if (!accountData.currentPassword) {
+      setSectionMessage("password", "", "Enter your current password to continue.");
+      return;
+    }
+    if (accountData.newPassword.length < 8) {
+      setSectionMessage("password", "", "New password must be at least 8 characters.");
+      return;
+    }
+
+    setAccountBusy((prev) => ({ ...prev, password: true }));
+    setSectionMessage("password");
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users/${currentUser?.id}/password`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
+        body: JSON.stringify({
+          currentPassword: accountData.currentPassword,
+          newPassword: accountData.newPassword,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update password.");
+
+      setAccountData((prev) => ({ ...prev, currentPassword: "", newPassword: "" }));
+      setSectionMessage("password", data.message || "Password updated.");
+    } catch (err) {
+      setSectionMessage("password", "", err.message || "Could not update password.");
+    } finally {
+      setAccountBusy((prev) => ({ ...prev, password: false }));
+    }
+  }
+
+  async function handleDeleteAccount() {
+    setAccountBusy((prev) => ({ ...prev, delete: true }));
+    setSectionMessage("delete");
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/users/${currentUser?.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
+        body: JSON.stringify({ confirmation: "DELETE" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not delete account.");
+
+      clearStoredUser();
+      navigate("/login", { replace: true });
+    } catch (err) {
+      setSectionMessage("delete", "", err.message || "Could not delete account.");
+      setAccountBusy((prev) => ({ ...prev, delete: false }));
+    }
+  }
+
+  function confirmDeleteAccount() {
+    if (accountData.confirmDelete !== "DELETE") {
+      setSectionMessage("delete", "", "Type DELETE before removing your account.");
+      return;
+    }
+
+    const confirmed = window.confirm("Delete your account permanently? This cannot be undone.");
+    if (!confirmed) return;
+    handleDeleteAccount();
+  }
+
   async function handleAvatarChange(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -86,7 +217,7 @@ function Profile() {
       await fetch(uploadUrl, { method: "PUT", body: file, headers: { "Content-Type": file.type } });
       await fetch(`${baseUrl}/api/users/${userId}/avatar`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-user-id": userId },
         body: JSON.stringify({ avatarUrl: publicUrl }),
       });
       setUser((prev) => ({ ...prev, profile_image_url: publicUrl }));
@@ -287,6 +418,63 @@ function Profile() {
 
         .profile-card-body { padding: 24px 28px 28px; }
 
+        .account-section {
+          margin-top: 4px; padding: 18px; border: 1.5px solid #f0f0f0;
+          border-radius: 12px; background: #fafafa;
+        }
+        .account-copy {
+          font-size: 13px; color: #666; line-height: 1.5; margin-bottom: 14px;
+        }
+        .account-form {
+          display: flex; flex-direction: column; gap: 10px; margin-bottom: 16px;
+        }
+        .account-row {
+          display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end;
+        }
+        .account-field {
+          display: flex; flex-direction: column; gap: 5px;
+        }
+        .account-label {
+          font-size: 10px; font-weight: 700; letter-spacing: 1.5px;
+          text-transform: uppercase; color: #666;
+        }
+        .account-input {
+          width: 100%; padding: 10px 13px;
+          border: 1.5px solid #e8e8e8; border-radius: 8px;
+          font-family: 'DM Sans', sans-serif; font-size: 13px; color: #0a0a0a;
+          background: #fff; outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .account-input:focus {
+          border-color: #FFBD00; box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
+        }
+        .account-hint {
+          font-size: 11px; color: #999;
+        }
+        .account-error {
+          font-size: 12px; color: #b91c1c; background: #fef2f2;
+          border: 1px solid #fecaca; border-radius: 8px; padding: 9px 11px;
+        }
+        .account-success {
+          font-size: 12px; color: #15803d; background: #f0fdf4;
+          border: 1px solid #86efac; border-radius: 8px; padding: 9px 11px;
+        }
+        .account-btn {
+          padding: 11px 16px; background: #0a0a0a; color: #FFBD00;
+          border: none; border-radius: 8px; font-size: 12px; font-weight: 700;
+          letter-spacing: 1px; text-transform: uppercase; cursor: pointer;
+          min-width: 150px; transition: background 0.15s;
+        }
+        .account-btn:hover { background: #222; }
+        .account-btn:disabled { opacity: 0.6; cursor: wait; }
+        .account-btn-danger {
+          background: #991b1b; color: #fff;
+        }
+        .account-btn-danger:hover { background: #7f1d1d; }
+        .account-divider {
+          height: 1px; background: #ececec; margin: 16px 0;
+        }
+
         .section-heading {
           font-family: 'Bebas Neue', sans-serif; font-size: 26px;
           letter-spacing: 2px; color: #0a0a0a; margin: 18px 0 12px;
@@ -413,6 +601,20 @@ function Profile() {
           border-radius: 8px; font-size: 13px; font-weight: 700; cursor: pointer; margin-top: 8px;
         }
         .modal-cancel:hover { background: #eee; }
+
+        @media (max-width: 640px) {
+          .profile-page { padding: 1rem 0.75rem; }
+          .profile-card { border-radius: 14px; }
+          .profile-card-header { padding: 24px 20px 20px; }
+          .profile-card-body { padding: 16px 16px 20px; }
+          .profile-name { font-size: 28px; }
+          .account-row { grid-template-columns: 1fr; }
+          .account-btn { width: 100%; }
+          .modal-grid { grid-template-columns: 1fr; }
+          .modal-card { border-radius: 14px; }
+          .listing-row { gap: 6px; }
+          .listing-actions { flex-wrap: wrap; }
+        }
       `}</style>
 
       <div className="profile-page">
@@ -441,6 +643,94 @@ function Profile() {
                 ⚙ Open Admin Dashboard →
               </div>
             )}
+
+            <div className="section-heading" style={{ marginTop: isAdmin ? "24px" : 0 }}>
+              Account Settings
+            </div>
+
+            <div className="account-section">
+              <div className="account-copy">
+                Keep your profile details current, rotate your password, or permanently remove your account.
+              </div>
+
+              <form className="account-form" onSubmit={handleUsernameUpdate}>
+                <div className="account-row">
+                  <div className="account-field">
+                    <label className="account-label">Username</label>
+                    <input
+                      className="account-input"
+                      value={accountData.username}
+                      onChange={(e) => setAccountData((prev) => ({ ...prev, username: e.target.value }))}
+                      maxLength={30}
+                    />
+                    <div className="account-hint">2-30 characters. Letters and numbers only.</div>
+                  </div>
+                  <button className="account-btn" type="submit" disabled={accountBusy.username}>
+                    {accountBusy.username ? "Saving..." : "Update Username"}
+                  </button>
+                </div>
+                {accountErrors.username && <div className="account-error">{accountErrors.username}</div>}
+                {accountStatus.username && <div className="account-success">{accountStatus.username}</div>}
+              </form>
+
+              <div className="account-divider" />
+
+              <form className="account-form" onSubmit={handlePasswordUpdate}>
+                <div className="account-field">
+                  <label className="account-label">Current Password</label>
+                  <input
+                    className="account-input"
+                    type="password"
+                    value={accountData.currentPassword}
+                    onChange={(e) => setAccountData((prev) => ({ ...prev, currentPassword: e.target.value }))}
+                  />
+                </div>
+                <div className="account-row">
+                  <div className="account-field">
+                    <label className="account-label">New Password</label>
+                    <input
+                      className="account-input"
+                      type="password"
+                      value={accountData.newPassword}
+                      onChange={(e) => setAccountData((prev) => ({ ...prev, newPassword: e.target.value }))}
+                    />
+                    <div className="account-hint">At least 8 characters.</div>
+                  </div>
+                  <button className="account-btn" type="submit" disabled={accountBusy.password}>
+                    {accountBusy.password ? "Updating..." : "Change Password"}
+                  </button>
+                </div>
+                {accountErrors.password && <div className="account-error">{accountErrors.password}</div>}
+                {accountStatus.password && <div className="account-success">{accountStatus.password}</div>}
+              </form>
+
+              <div className="account-divider" />
+
+              <div className="account-form" style={{ marginBottom: 0 }}>
+                <div className="account-field">
+                  <label className="account-label">Delete Account Confirmation</label>
+                  <input
+                    className="account-input"
+                    value={accountData.confirmDelete}
+                    onChange={(e) => setAccountData((prev) => ({ ...prev, confirmDelete: e.target.value }))}
+                    placeholder="Type DELETE to confirm"
+                  />
+                  <div className="account-hint">
+                    This removes your account and any related listings, notes, messages, and moderation records.
+                  </div>
+                </div>
+                <button
+                  className="account-btn account-btn-danger"
+                  type="button"
+                  onClick={confirmDeleteAccount}
+                  disabled={accountBusy.delete}
+                >
+                  {accountBusy.delete ? "Deleting..." : "Delete Account"}
+                </button>
+                {accountErrors.delete && <div className="account-error">{accountErrors.delete}</div>}
+                {accountStatus.delete && <div className="account-success">{accountStatus.delete}</div>}
+              </div>
+            </div>
 
             <div className="section-heading">
               My Listings <span className="section-count">{listings.length}</span>

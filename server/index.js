@@ -5,6 +5,7 @@ const cors = require("cors");
 const pool = require("./db");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
+const { requireAuth } = require("./middleware/auth");
 
 const BOOT_MARKER = new Date().toISOString();
 const VERIFICATION_CODE_TTL_MINUTES = 15;
@@ -102,6 +103,14 @@ async function sendVerificationEmail(email, code) {
 function isValidUwmEmail(email) {
   const normalizedEmail = String(email).trim().toLowerCase();
   return normalizedEmail.includes('@') && normalizedEmail.endsWith('@uwm.edu');
+}
+
+function normalizeUsername(value) {
+  return String(value || "").trim();
+}
+
+function isValidUsername(value) {
+  return /^[A-Za-z0-9]{2,30}$/.test(value);
 }
 
 async function ensureSchema() {
@@ -667,6 +676,116 @@ app.get('/api/users/:id', async (req, res, next) => {
   }
 });
 
+app.put('/api/users/:id/username', requireAuth, async (req, res, next) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
+    const username = normalizeUsername(req.body?.username);
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: 'Invalid user id.' });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only update your own account.' });
+    }
+
+    if (!isValidUsername(username)) {
+      return res.status(400).json({
+        error: 'Username must be 2-30 letters or numbers only.',
+      });
+    }
+
+    await runQuery('UPDATE Users SET full_name = ? WHERE user_id = ?', [username, targetUserId]);
+
+    const [updatedUser] = await runQuery(
+      'SELECT user_id, full_name, email, profile_image_url, role, created_at FROM Users WHERE user_id = ? LIMIT 1',
+      [targetUserId]
+    );
+
+    res.json({
+      message: 'Username updated successfully.',
+      user: updatedUser,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/users/:id/password', requireAuth, async (req, res, next) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: 'Invalid user id.' });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only update your own account.' });
+    }
+
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required.' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+
+    const [existingUser] = await runQuery(
+      'SELECT user_id, password_hash FROM Users WHERE user_id = ? LIMIT 1',
+      [targetUserId]
+    );
+
+    if (!existingUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (!verifyPassword(currentPassword, existingUser.password_hash)) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    const nextPasswordHash = hashPassword(newPassword);
+    await runQuery('UPDATE Users SET password_hash = ? WHERE user_id = ?', [nextPasswordHash, targetUserId]);
+
+    res.json({ message: 'Password updated successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/users/:id', requireAuth, async (req, res, next) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
+    const confirmation = String(req.body?.confirmation || '').trim();
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: 'Invalid user id.' });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only delete your own account.' });
+    }
+
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ error: 'Please type DELETE to confirm account removal.' });
+    }
+
+    const result = await runQuery('DELETE FROM Users WHERE user_id = ?', [targetUserId]);
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    res.json({ message: 'Account deleted successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.get('/api/listings', async (req, res, next) => {
   try {
     const { userId } = req.query;
@@ -833,11 +952,22 @@ app.get("/api/upload-url", async (req, res, next) => {
   }
 });
 
-app.put("/api/users/:id/avatar", async (req, res, next) => {
+app.put("/api/users/:id/avatar", requireAuth, async (req, res, next) => {
   try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
     const { avatarUrl } = req.body;
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: "Invalid user id." });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: "You can only update your own avatar." });
+    }
+
     if (!avatarUrl) return res.status(400).json({ error: "avatarUrl is required." });
-    await runQuery("UPDATE Users SET profile_image_url = ? WHERE user_id = ?", [avatarUrl, req.params.id]);
+    await runQuery("UPDATE Users SET profile_image_url = ? WHERE user_id = ?", [avatarUrl, targetUserId]);
     res.json({ success: true, profile_image_url: avatarUrl });
   } catch (err) {
     next(err);
