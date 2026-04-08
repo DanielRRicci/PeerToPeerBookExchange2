@@ -5,6 +5,7 @@ const cors = require("cors");
 const pool = require("./db");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
+const { requireAuth } = require("./middleware/auth");
 
 const BOOT_MARKER = new Date().toISOString();
 const VERIFICATION_CODE_TTL_MINUTES = 15;
@@ -104,6 +105,14 @@ function isValidUwmEmail(email) {
   return normalizedEmail.includes('@') && normalizedEmail.endsWith('@uwm.edu');
 }
 
+function normalizeUsername(value) {
+  return String(value || "").trim();
+}
+
+function isValidUsername(value) {
+  return /^[A-Za-z0-9]{2,30}$/.test(value);
+}
+
 async function ensureSchema() {
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Users (
@@ -134,6 +143,19 @@ async function ensureSchema() {
     )
   `);
 
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS Notifications (
+      notification_id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      message VARCHAR(500) NOT NULL,
+      listing_id INT,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+    )
+  `);
+
   const addColumnStatements = [
     'ALTER TABLE Users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE Users ADD COLUMN verification_code_hash VARCHAR(255)',
@@ -158,7 +180,6 @@ async function ensureSchema() {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
 
-  // ModerationLog table
   await runQuery(`
     CREATE TABLE IF NOT EXISTS ModerationLog (
       log_id         INT AUTO_INCREMENT PRIMARY KEY,
@@ -242,10 +263,8 @@ app.use(
 
 app.use(express.json());
 
-// ─── Make pool available to admin router middleware ───────────────────────────
 app.set('db', pool);
 
-// ─── Admin routes ─────────────────────────────────────────────────────────────
 const adminRouter = require('./routes/admin');
 app.use('/api/admin', adminRouter);
 
@@ -355,7 +374,7 @@ app.delete("/BookListings/:id", async (req, res, next) => {
   }
 });
 
-// POST /BookListings — new listings start as Pending (awaiting admin approval)
+// POST /BookListings
 app.post("/BookListings", async (req, res, next) => {
   try {
     const { user_id, title, author, edition, isbn, price, course_code, book_condition, notes, image_url } = req.body;
@@ -483,8 +502,8 @@ app.post('/api/register', async (req, res) => {
       [normalizedEmail]
     );
 
-    const verificationCode     = generateVerificationCode();
-    const verificationHash     = hashVerificationCode(verificationCode);
+    const verificationCode      = generateVerificationCode();
+    const verificationHash      = hashVerificationCode(verificationCode);
     const verificationExpiresAt = getVerificationExpiryDate();
 
     if (existing.length > 0) {
@@ -629,7 +648,7 @@ app.post('/api/login', async (req, res) => {
         fullName: user.full_name,
         email: user.email,
         profile_image_url: user.profile_image_url,
-        role: user.role,           // ← included so frontend knows admin status
+        role: user.role,
       },
     });
   } catch (error) {
@@ -652,6 +671,116 @@ app.get('/api/users/:id', async (req, res, next) => {
     );
     if (users.length === 0) return res.status(404).json({ error: 'User not found.' });
     res.json(users[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/users/:id/username', requireAuth, async (req, res, next) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
+    const username = normalizeUsername(req.body?.username);
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: 'Invalid user id.' });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only update your own account.' });
+    }
+
+    if (!isValidUsername(username)) {
+      return res.status(400).json({
+        error: 'Username must be 2-30 letters or numbers only.',
+      });
+    }
+
+    await runQuery('UPDATE Users SET full_name = ? WHERE user_id = ?', [username, targetUserId]);
+
+    const [updatedUser] = await runQuery(
+      'SELECT user_id, full_name, email, profile_image_url, role, created_at FROM Users WHERE user_id = ? LIMIT 1',
+      [targetUserId]
+    );
+
+    res.json({
+      message: 'Username updated successfully.',
+      user: updatedUser,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/users/:id/password', requireAuth, async (req, res, next) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
+    const currentPassword = String(req.body?.currentPassword || '');
+    const newPassword = String(req.body?.newPassword || '');
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: 'Invalid user id.' });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only update your own account.' });
+    }
+
+    if (!currentPassword) {
+      return res.status(400).json({ error: 'Current password is required.' });
+    }
+
+    if (newPassword.length < 8) {
+      return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+    }
+
+    const [existingUser] = await runQuery(
+      'SELECT user_id, password_hash FROM Users WHERE user_id = ? LIMIT 1',
+      [targetUserId]
+    );
+
+    if (!existingUser) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    if (!verifyPassword(currentPassword, existingUser.password_hash)) {
+      return res.status(401).json({ error: 'Current password is incorrect.' });
+    }
+
+    const nextPasswordHash = hashPassword(newPassword);
+    await runQuery('UPDATE Users SET password_hash = ? WHERE user_id = ?', [nextPasswordHash, targetUserId]);
+
+    res.json({ message: 'Password updated successfully.' });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete('/api/users/:id', requireAuth, async (req, res, next) => {
+  try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
+    const confirmation = String(req.body?.confirmation || '').trim();
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: 'Invalid user id.' });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: 'You can only delete your own account.' });
+    }
+
+    if (confirmation !== 'DELETE') {
+      return res.status(400).json({ error: 'Please type DELETE to confirm account removal.' });
+    }
+
+    const result = await runQuery('DELETE FROM Users WHERE user_id = ?', [targetUserId]);
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    res.json({ message: 'Account deleted successfully.' });
   } catch (err) {
     next(err);
   }
@@ -823,15 +952,83 @@ app.get("/api/upload-url", async (req, res, next) => {
   }
 });
 
-app.put("/api/users/:id/avatar", async (req, res, next) => {
+app.put("/api/users/:id/avatar", requireAuth, async (req, res, next) => {
   try {
+    const targetUserId = Number(req.params.id);
+    const currentUserId = Number(req.currentUser?.user_id);
     const { avatarUrl } = req.body;
+
+    if (!Number.isInteger(targetUserId) || targetUserId <= 0) {
+      return res.status(400).json({ error: "Invalid user id." });
+    }
+
+    if (targetUserId !== currentUserId) {
+      return res.status(403).json({ error: "You can only update your own avatar." });
+    }
+
     if (!avatarUrl) return res.status(400).json({ error: "avatarUrl is required." });
-    await runQuery("UPDATE Users SET profile_image_url = ? WHERE user_id = ?", [avatarUrl, req.params.id]);
+    await runQuery("UPDATE Users SET profile_image_url = ? WHERE user_id = ?", [avatarUrl, targetUserId]);
     res.json({ success: true, profile_image_url: avatarUrl });
   } catch (err) {
     next(err);
   }
+});
+
+// ── Notification routes ───────────────────────────────────────────────────────
+
+app.get("/api/notifications", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    const rows = await runQuery(
+      `SELECT * FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      [userId]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+app.get("/api/notifications/unread-count", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    const rows = await runQuery(
+      `SELECT COUNT(*) AS count FROM Notifications WHERE user_id = ? AND is_read = FALSE`,
+      [userId]
+    );
+    res.json({ count: rows[0]?.count || 0 });
+  } catch (err) { next(err); }
+});
+
+app.put("/api/notifications/:id/read", async (req, res, next) => {
+  try {
+    await runQuery(
+      `UPDATE Notifications SET is_read = TRUE WHERE notification_id = ?`,
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+app.put("/api/notifications/read-all", async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    await runQuery(
+      `UPDATE Notifications SET is_read = TRUE WHERE user_id = ?`,
+      [userId]
+    );
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+app.delete("/api/notifications/clear", async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    await runQuery(`DELETE FROM Notifications WHERE user_id = ?`, [userId]);
+    res.json({ success: true });
+  } catch (err) { next(err); }
 });
 
 // ── Messaging routes ──────────────────────────────────────────────────────────
@@ -851,24 +1048,24 @@ app.get("/api/messages/conversations", async (req, res, next) => {
 
     const conversations = await Promise.all(
       pairs.map(async ({ other_user_id, listing_id }) => {
-        const [lastMsg]    = await runQuery(
+        const [lastMsg]   = await runQuery(
           `SELECT content, sent_at FROM Messages WHERE listing_id = ?
            AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
            ORDER BY sent_at DESC LIMIT 1`,
           [listing_id, userId, other_user_id, other_user_id, userId]
         );
-        const [otherUser]  = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [other_user_id]);
-        const [book]       = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listing_id]);
-        const [unreadRow]  = await runQuery(
+        const [otherUser] = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [other_user_id]);
+        const [book]      = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listing_id]);
+        const [unreadRow] = await runQuery(
           `SELECT COUNT(*) AS unread_count FROM Messages WHERE listing_id = ? AND sender_id = ? AND receiver_id = ? AND is_read = FALSE`,
           [listing_id, other_user_id, userId]
         );
 
         return {
           other_user_id,
-          other_user_name: otherUser?.full_name || "Unknown",
+          other_user_name: otherUser?.full_name  || "Unknown",
           listing_id,
-          book_title:      book?.title          || "Unknown Book",
+          book_title:      book?.title           || "Unknown Book",
           last_message:    lastMsg?.content      || "",
           last_sent_at:    lastMsg?.sent_at      || null,
           unread_count:    unreadRow?.unread_count || 0,
@@ -918,6 +1115,19 @@ app.post("/api/messages", async (req, res, next) => {
     );
 
     const [newMessage] = await runQuery("SELECT * FROM Messages WHERE message_id = ?", [result.insertId]);
+
+    // Notify the receiver
+    try {
+      const [senderUser] = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [senderId]);
+      const [listing]    = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listingId]);
+      const senderName   = senderUser?.full_name || "Someone";
+      const bookTitle    = listing?.title        || "a listing";
+      await runQuery(
+        `INSERT INTO Notifications (user_id, type, message, listing_id) VALUES (?, 'message', ?, ?)`,
+        [receiverId, `${senderName} sent you a message about "${bookTitle}"`, listingId]
+      );
+    } catch {}
+
     res.status(201).json(newMessage);
   } catch (err) {
     next(err);
