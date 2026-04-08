@@ -5,16 +5,23 @@ import { getApiBaseUrl } from "./apiBaseUrl";
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function fileTypeLabel(mimeType) {
   if (!mimeType) return "File";
-  if (mimeType === "application/pdf") return "PDF";
-  if (mimeType.startsWith("image/")) return "Image";
-  if (mimeType.startsWith("audio/")) return "Audio";
-  if (mimeType.startsWith("video/")) return "Video";
-  if (mimeType === "text/csv" || mimeType === "application/vnd.ms-excel") return "CSV";
-  if (
-    mimeType === "application/vnd.ms-powerpoint" ||
-    mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-  )
-    return "PowerPoint";
+  const mime = mimeType.toLowerCase();
+  
+  if (mime.includes("pdf")) return "PDF";
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "JPEG";
+  if (mime.includes("png")) return "PNG";
+  if (mime.includes("webp")) return "WebP";
+  if (mime.includes("mp3") || mime.includes("mpeg")) return "MP3";
+  if (mime.includes("wav")) return "WAV";
+  if (mime.includes("csv")) return "CSV";
+  if (mime.includes("excel") || mime.includes("spreadsheetml")) return "XLS";
+  if (mime.includes("mp4")) return "MP4";
+  if (mime.includes("quicktime") || mime.includes("mov")) return "MOV";
+  if (mime.includes("powerpoint") || mime.includes("presentationml")) return "PPT";
+
+  if (mime.startsWith("image/")) return "Image";
+  if (mime.startsWith("audio/")) return "Audio";
+  if (mime.startsWith("video/")) return "Video";
   return "File";
 }
 
@@ -135,12 +142,13 @@ function BookListings() {
   const [category,       setCategory]       = useState("All");
   const [sortOrder,      setSortOrder]      = useState("");
   const [typeFilter,     setTypeFilter]     = useState("All");
+  const [noteFormatFilter, setNoteFormatFilter] = useState("All");
   const [statusFilter,   setStatusFilter]   = useState(isAdmin ? "All" : "Active");
 
   const [editingId,      setEditingId]      = useState(null);
   const [deleteTarget,   setDeleteTarget]   = useState(null);
   const [showEditModal,  setShowEditModal]  = useState(false);
-  const [adminTarget,    setAdminTarget]    = useState(null); // listing for admin status override
+  const [adminTarget,    setAdminTarget]    = useState(null);
 
   const [editData, setEditData] = useState({
     listing_id: null, title: "", author: "", edition: "", isbn: "",
@@ -187,13 +195,10 @@ function BookListings() {
     const isbn       = (book.isbn || "").toLowerCase();
     const desc       = (book.description || "").toLowerCase();
 
-    // Status filter logic
     const isOwn = currentUser && currentUser.id === book.user_id;
     if (!isAdmin && !isOwn) {
-      // Regular users only see Active listings from others
       if (s !== "active") return false;
     } else if (!isAdmin && isOwn) {
-      // Owners see all their own listings (except Removed)
       if (s === "removed" && statusFilter !== "All") return false;
     } else if (isAdmin && statusFilter !== "All") {
       if (s !== statusFilter.toLowerCase()) return false;
@@ -214,11 +219,25 @@ function BookListings() {
       (typeFilter === "Books" && book._type === "book") ||
       (typeFilter === "Notes" && book._type === "notes");
 
-    return matchesSearch && matchesCategory && matchesType;
+    let matchesNoteFormat = true;
+    if (noteFormatFilter !== "All") {
+      matchesNoteFormat = book._type === "notes" && fileTypeLabel(book.file_type) === noteFormatFilter;
+    }
+
+    return matchesSearch && matchesCategory && matchesType && matchesNoteFormat;
   });
 
-  if (sortOrder === "lowToHigh") processedBooks.sort((a, b) => a.price - b.price);
-  else if (sortOrder === "highToLow") processedBooks.sort((a, b) => b.price - a.price);
+  // CHANGED: Added Date sorting logic using created_at
+  if (sortOrder === "lowToHigh") {
+    processedBooks.sort((a, b) => a.price - b.price);
+  } else if (sortOrder === "highToLow") {
+    processedBooks.sort((a, b) => b.price - a.price);
+  } else if (sortOrder === "newest") {
+    // Converts SQL timestamp to JS Date, subtracts to put newest dates first
+    processedBooks.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  } else if (sortOrder === "oldest") {
+    processedBooks.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
+  }
 
   // ── actions ──────────────────────────────────────────────────────────────
   function handleContact(book) {
@@ -260,7 +279,6 @@ function BookListings() {
       const baseUrl = getApiBaseUrl();
       if (!editData.listing_id) throw new Error("Missing listing id.");
 
-      // Sellers can only toggle between Active and Sold
       const allowedStatuses = isAdmin
         ? ["Pending", "Active", "Sold", "Removed", "Under Review"]
         : ["Active", "Sold"];
@@ -330,7 +348,6 @@ function BookListings() {
     }
   }
 
-  // Admin: quick approve (Pending → Active)
   async function handleApprove(listingId) {
     try {
       const baseUrl = getApiBaseUrl();
@@ -352,7 +369,6 @@ function BookListings() {
     }
   }
 
-  // Admin: status override via modal
   async function handleAdminStatusSave(listingId, newStatus, notes) {
     try {
       const baseUrl = getApiBaseUrl();
@@ -373,7 +389,6 @@ function BookListings() {
     }
   }
 
-  // Seller: quick toggle Active ↔ Sold
   async function handleSellerStatusToggle(book) {
     const newStatus = (book.status || "Active") === "Sold" ? "Active" : "Sold";
     try {
@@ -425,7 +440,6 @@ function BookListings() {
           background-size: 60px 60px;
         }
 
-        /* Admin banner */
         .admin-banner {
           position: relative; z-index: 2;
           background: linear-gradient(90deg, #0a0a0a, #1a0a00);
@@ -434,246 +448,103 @@ function BookListings() {
           display: flex; align-items: center; justify-content: space-between; gap: 12px;
           flex-wrap: wrap;
         }
-        .admin-banner-left {
-          display: flex; align-items: center; gap: 10px;
-        }
-        .admin-pill {
-          background: #FFBD00; color: #0a0a0a;
-          font-size: 9px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase;
-          padding: 3px 10px; border-radius: 20px;
-        }
-        .admin-banner-text {
-          color: rgba(255,189,0,0.7); font-size: 12px; font-weight: 600;
-        }
-        .admin-dashboard-link {
-          background: rgba(255,189,0,0.12); border: 1.5px solid rgba(255,189,0,0.3);
-          color: #FFBD00; border-radius: 8px; padding: 5px 14px;
-          font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase;
-          cursor: pointer; transition: background 0.15s;
-        }
+        .admin-banner-left { display: flex; align-items: center; gap: 10px; }
+        .admin-pill { background: #FFBD00; color: #0a0a0a; font-size: 9px; font-weight: 800; letter-spacing: 2px; text-transform: uppercase; padding: 3px 10px; border-radius: 20px; }
+        .admin-banner-text { color: rgba(255,189,0,0.7); font-size: 12px; font-weight: 600; }
+        .admin-dashboard-link { background: rgba(255,189,0,0.12); border: 1.5px solid rgba(255,189,0,0.3); color: #FFBD00; border-radius: 8px; padding: 5px 14px; font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; cursor: pointer; transition: background 0.15s; }
         .admin-dashboard-link:hover { background: rgba(255,189,0,0.22); }
 
-        .listings-container {
-          position: relative; z-index: 1;
-          display: flex; flex-wrap: wrap;
-          padding: 2rem; max-width: 1240px; margin: 0 auto; gap: 1.75rem;
-        }
+        .listings-container { position: relative; z-index: 1; display: flex; flex-wrap: wrap; padding: 2rem; max-width: 1240px; margin: 0 auto; gap: 1.75rem; }
 
-        .listings-sidebar {
-          flex: 1 1 240px; background: #fff; border-radius: 16px;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,189,0,0.1);
-          overflow: hidden; height: fit-content;
-        }
-        .sidebar-header {
-          background: #0a0a0a; padding: 18px 20px; border-bottom: 3px solid #FFBD00;
-        }
-        .sidebar-title {
-          font-family: 'Bebas Neue', sans-serif; font-size: 22px;
-          letter-spacing: 2px; color: #FFBD00;
-        }
+        .listings-sidebar { flex: 1 1 240px; background: #fff; border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,189,0,0.1); overflow: hidden; height: fit-content; }
+        .sidebar-header { background: #0a0a0a; padding: 18px 20px; border-bottom: 3px solid #FFBD00; }
+        .sidebar-title { font-family: 'Bebas Neue', sans-serif; font-size: 22px; letter-spacing: 2px; color: #FFBD00; }
         .sidebar-body { padding: 20px; }
 
-        .filter-label {
-          display: block; font-size: 10px; font-weight: 700; letter-spacing: 2px;
-          text-transform: uppercase; color: #666; margin-bottom: 6px;
-        }
-        .filter-input {
-          width: 100%; padding: 9px 12px; border: 1.5px solid #e8e8e8; border-radius: 8px;
-          font-family: 'DM Sans', sans-serif; font-size: 13px; color: #0a0a0a;
-          background: #fafafa; outline: none; margin-bottom: 14px;
-          transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        .filter-input:focus {
-          border-color: #FFBD00; background: #fff;
-          box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
-        }
+        .filter-label { display: block; font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: #666; margin-bottom: 6px; }
+        .filter-input { width: 100%; padding: 9px 12px; border: 1.5px solid #e8e8e8; border-radius: 8px; font-family: 'DM Sans', sans-serif; font-size: 13px; color: #0a0a0a; background: #fafafa; outline: none; margin-bottom: 14px; transition: border-color 0.2s, box-shadow 0.2s; }
+        .filter-input:focus { border-color: #FFBD00; background: #fff; box-shadow: 0 0 0 3px rgba(255,189,0,0.12); }
 
         .radio-group { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
-        .radio-chip {
-          display: inline-flex; align-items: center; gap: 5px;
-          font-size: 12px; font-weight: 600; color: #555;
-          cursor: pointer; padding: 4px 10px; border-radius: 20px;
-          border: 1.5px solid #e8e8e8; background: #fafafa;
-          transition: all 0.15s; white-space: nowrap;
-        }
+        .radio-chip { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; color: #555; cursor: pointer; padding: 4px 10px; border-radius: 20px; border: 1.5px solid #e8e8e8; background: #fafafa; transition: all 0.15s; white-space: nowrap; }
         .radio-chip input { display: none; }
         .radio-chip:has(input:checked) { background: #0a0a0a; color: #FFBD00; border-color: #0a0a0a; }
         .radio-chip:hover:not(:has(input:checked)) { border-color: #FFBD00; color: #0a0a0a; }
 
         .filter-divider { height: 1px; background: #f0f0f0; margin: 4px 0 16px; }
 
-        .listings-grid {
-          flex: 3 1 600px;
-          display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-          gap: 1.25rem; align-content: start;
-        }
+        .listings-grid { flex: 3 1 600px; display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 1.25rem; align-content: start; }
 
-        .book-card {
-          background: #fff; border-radius: 14px; overflow: hidden;
-          box-shadow: 0 10px 35px rgba(0,0,0,0.4);
-          display: flex; flex-direction: column;
-          transition: transform 0.2s, box-shadow 0.2s; cursor: default;
-        }
+        .book-card { background: #fff; border-radius: 14px; overflow: hidden; box-shadow: 0 10px 35px rgba(0,0,0,0.4); display: flex; flex-direction: column; transition: transform 0.2s, box-shadow 0.2s; cursor: default; }
         .book-card:hover { transform: translateY(-6px); box-shadow: 0 20px 50px rgba(0,0,0,0.5); }
 
-        /* Dimmed overlay for non-active listings */
         .book-card.status-sold      { opacity: 0.75; }
         .book-card.status-pending   { border: 2px dashed #eab308; }
         .book-card.status-removed   { opacity: 0.5; filter: grayscale(0.4); }
         .book-card.status-under-review { border: 2px dashed #f97316; }
 
         .book-card-img { width: 100%; height: 160px; object-fit: cover; border-bottom: 3px solid #FFBD00; }
-        .book-card-img-notes {
-          width: 100%; height: 160px;
-          display: flex; align-items: center; justify-content: center;
-          background: linear-gradient(135deg, #1a1a1a, #0a0a0a);
-          border-bottom: 3px solid #FFBD00;
-          font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem;
-          letter-spacing: 3px; color: #FFBD00;
-        }
-        .book-card-body {
-          padding: 14px; display: flex; flex-direction: column; flex-grow: 1;
-        }
+        .book-card-img-notes { width: 100%; height: 160px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1a1a1a, #0a0a0a); border-bottom: 3px solid #FFBD00; font-family: 'Bebas Neue', sans-serif; font-size: 1.6rem; letter-spacing: 3px; color: #FFBD00; }
+        .book-card-body { padding: 14px; display: flex; flex-direction: column; flex-grow: 1; }
 
         .badge-row { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 8px; }
-        .badge-course {
-          display: inline-block; background: #0a0a0a; color: #FFBD00;
-          font-size: 0.65rem; font-weight: 700; padding: 3px 9px; border-radius: 20px;
-          letter-spacing: 0.8px; text-transform: uppercase;
-        }
-        .badge-notes {
-          display: inline-block; background: #FFBD00; color: #0a0a0a;
-          font-size: 0.65rem; font-weight: 700; padding: 3px 9px; border-radius: 20px;
-          letter-spacing: 0.8px; text-transform: uppercase;
-        }
+        .badge-course { display: inline-block; background: #0a0a0a; color: #FFBD00; font-size: 0.65rem; font-weight: 700; padding: 3px 9px; border-radius: 20px; letter-spacing: 0.8px; text-transform: uppercase; }
+        .badge-notes { display: inline-block; background: #FFBD00; color: #0a0a0a; font-size: 0.65rem; font-weight: 700; padding: 3px 9px; border-radius: 20px; letter-spacing: 0.8px; text-transform: uppercase; }
 
-        .book-title {
-          font-family: 'DM Sans', sans-serif; font-size: 1rem; font-weight: 700;
-          color: #0a0a0a; margin-bottom: 3px; line-height: 1.3;
-        }
+        .book-title { font-family: 'DM Sans', sans-serif; font-size: 1rem; font-weight: 700; color: #0a0a0a; margin-bottom: 3px; line-height: 1.3; }
         .book-author { font-size: 0.85rem; color: #777; margin-bottom: 10px; }
         .book-description { font-size: 0.82rem; color: #999; margin-bottom: 8px; line-height: 1.5; }
 
-        .card-footer {
-          margin-top: auto; display: flex; justify-content: space-between;
-          align-items: center; border-top: 1px solid #f0f0f0;
-          padding-top: 10px; gap: 8px; flex-wrap: wrap;
-        }
-        .card-price {
-          font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; letter-spacing: 1px; color: #0a0a0a;
-        }
+        .card-footer { margin-top: auto; display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f0f0f0; padding-top: 10px; gap: 8px; flex-wrap: wrap; }
+        .card-price { font-family: 'Bebas Neue', sans-serif; font-size: 1.3rem; letter-spacing: 1px; color: #0a0a0a; }
         .card-btn-group { display: flex; gap: 6px; flex-wrap: wrap; }
 
-        .btn-primary {
-          background: #FFBD00; color: #0a0a0a; border: none; padding: 7px 13px;
-          border-radius: 20px; font-weight: 700; font-size: 0.75rem; cursor: pointer;
-          letter-spacing: 0.5px; transition: background 0.15s, transform 0.15s;
-        }
+        .btn-primary { background: #FFBD00; color: #0a0a0a; border: none; padding: 7px 13px; border-radius: 20px; font-weight: 700; font-size: 0.75rem; cursor: pointer; letter-spacing: 0.5px; transition: background 0.15s, transform 0.15s; }
         .btn-primary:hover { background: #e6a800; transform: translateY(-1px); }
 
-        .btn-secondary {
-          background: #0a0a0a; color: #FFBD00; border: none; padding: 7px 13px;
-          border-radius: 20px; font-weight: 700; font-size: 0.75rem; cursor: pointer;
-          letter-spacing: 0.5px; transition: background 0.15s, transform 0.15s;
-        }
+        .btn-secondary { background: #0a0a0a; color: #FFBD00; border: none; padding: 7px 13px; border-radius: 20px; font-weight: 700; font-size: 0.75rem; cursor: pointer; letter-spacing: 0.5px; transition: background 0.15s, transform 0.15s; }
         .btn-secondary:hover { background: #222; transform: translateY(-1px); }
 
-        .btn-danger {
-          background: #b3261e; color: white; border: none; padding: 7px 13px;
-          border-radius: 20px; font-weight: 700; font-size: 0.75rem; cursor: pointer;
-          letter-spacing: 0.5px; transition: background 0.15s, transform 0.15s;
-        }
+        .btn-danger { background: #b3261e; color: white; border: none; padding: 7px 13px; border-radius: 20px; font-weight: 700; font-size: 0.75rem; cursor: pointer; letter-spacing: 0.5px; transition: background 0.15s, transform 0.15s; }
         .btn-danger:hover { background: #8f1f18; transform: translateY(-1px); }
 
-        .btn-approve {
-          background: #f0fdf4; color: #15803d; border: 1.5px solid #86efac; padding: 5px 10px;
-          border-radius: 20px; font-weight: 700; font-size: 0.72rem; cursor: pointer;
-          transition: background 0.15s;
-        }
+        .btn-approve { background: #f0fdf4; color: #15803d; border: 1.5px solid #86efac; padding: 5px 10px; border-radius: 20px; font-weight: 700; font-size: 0.72rem; cursor: pointer; transition: background 0.15s; }
         .btn-approve:hover { background: #dcfce7; }
 
-        .btn-admin {
-          background: linear-gradient(135deg, #1a0a00, #0a0a0a);
-          color: #FFBD00; border: 1.5px solid rgba(255,189,0,0.3);
-          padding: 5px 10px; border-radius: 20px; font-weight: 700; font-size: 0.72rem;
-          cursor: pointer; transition: border-color 0.15s;
-        }
+        .btn-admin { background: linear-gradient(135deg, #1a0a00, #0a0a0a); color: #FFBD00; border: 1.5px solid rgba(255,189,0,0.3); padding: 5px 10px; border-radius: 20px; font-weight: 700; font-size: 0.72rem; cursor: pointer; transition: border-color 0.15s; }
         .btn-admin:hover { border-color: #FFBD00; }
 
-        .btn-sold-toggle {
-          background: transparent; color: #854d0e;
-          border: 1.5px solid #fde047; padding: 5px 10px;
-          border-radius: 20px; font-weight: 700; font-size: 0.72rem;
-          cursor: pointer; transition: background 0.15s;
-        }
+        .btn-sold-toggle { background: transparent; color: #854d0e; border: 1.5px solid #fde047; padding: 5px 10px; border-radius: 20px; font-weight: 700; font-size: 0.72rem; cursor: pointer; transition: background 0.15s; }
         .btn-sold-toggle:hover { background: #fefce8; }
-        .btn-sold-toggle.is-sold {
-          background: #fefce8; color: #15803d;
-          border-color: #86efac;
-        }
+        .btn-sold-toggle.is-sold { background: #fefce8; color: #15803d; border-color: #86efac; }
         .btn-sold-toggle.is-sold:hover { background: #f0fdf4; }
 
-        .listings-empty {
-          color: rgba(255,255,255,0.6); grid-column: 1 / -1;
-          text-align: center; padding: 4rem 0;
-        }
+        .listings-empty { color: rgba(255,255,255,0.6); grid-column: 1 / -1; text-align: center; padding: 4rem 0; }
         .listings-empty-icon { font-size: 3rem; margin-bottom: 12px; }
-        .listings-empty-text {
-          font-family: 'Bebas Neue', sans-serif; font-size: 28px;
-          letter-spacing: 2px; color: rgba(255,255,255,0.5);
-        }
+        .listings-empty-text { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: rgba(255,255,255,0.5); }
 
         /* Modals */
-        .modal-overlay {
-          position: fixed; inset: 0; background: rgba(0,0,0,0.7);
-          display: flex; align-items: center; justify-content: center;
-          z-index: 9999; padding: 20px;
-        }
-        .modal-card {
-          width: 100%; max-width: 700px; background: white;
-          border-radius: 18px; overflow: hidden;
-          box-shadow: 0 20px 60px rgba(0,0,0,0.35);
-        }
-        .modal-header {
-          background: #0a0a0a; padding: 20px 24px; border-bottom: 3px solid #FFBD00;
-        }
-        .modal-title {
-          font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #FFBD00;
-        }
+        .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center; z-index: 9999; padding: 20px; }
+        .modal-card { width: 100%; max-width: 700px; background: white; border-radius: 18px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
+        .modal-header { background: #0a0a0a; padding: 20px 24px; border-bottom: 3px solid #FFBD00; }
+        .modal-title { font-family: 'Bebas Neue', sans-serif; font-size: 28px; letter-spacing: 2px; color: #FFBD00; }
         .modal-body { padding: 22px; }
         .modal-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
         .modal-group { display: flex; flex-direction: column; }
         .modal-full  { grid-column: 1 / -1; }
         .modal-label { font-size: 11px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: #666; margin-bottom: 6px; }
-        .modal-input, .modal-textarea, .modal-select {
-          width: 100%; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 10px;
-          font-size: 14px; background: #fafafa; outline: none;
-          font-family: 'DM Sans', sans-serif;
-        }
-        .modal-input:focus, .modal-textarea:focus, .modal-select:focus {
-          border-color: #FFBD00; background: white; box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
-        }
+        .modal-input, .modal-textarea, .modal-select { width: 100%; padding: 10px 12px; border: 1.5px solid #ddd; border-radius: 10px; font-size: 14px; background: #fafafa; outline: none; font-family: 'DM Sans', sans-serif; }
+        .modal-input:focus, .modal-textarea:focus, .modal-select:focus { border-color: #FFBD00; background: white; box-shadow: 0 0 0 3px rgba(255,189,0,0.12); }
         .modal-textarea { min-height: 100px; resize: vertical; }
-        .modal-save {
-          margin-top: 18px; width: 100%; background: #FFBD00; color: #0a0a0a;
-          border: none; padding: 12px; border-radius: 10px; font-weight: 700;
-          font-size: 14px; cursor: pointer; transition: background 0.15s;
-        }
+        .modal-save { margin-top: 18px; width: 100%; background: #FFBD00; color: #0a0a0a; border: none; padding: 12px; border-radius: 10px; font-weight: 700; font-size: 14px; cursor: pointer; transition: background 0.15s; }
         .modal-save:disabled { opacity: 0.6; cursor: not-allowed; }
         .modal-save:not(:disabled):hover { background: #e6a800; }
-        .modal-cancel {
-          margin-top: 10px; width: 100%; background: #0a0a0a; color: #FFBD00;
-          border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer;
-        }
-        .delete-modal {
-          background: white; width: 90%; max-width: 400px; border-radius: 16px;
-          padding: 24px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35);
-        }
+        .modal-cancel { margin-top: 10px; width: 100%; background: #0a0a0a; color: #FFBD00; border: none; padding: 12px; border-radius: 10px; font-weight: 700; cursor: pointer; }
+        .delete-modal { background: white; width: 90%; max-width: 400px; border-radius: 16px; padding: 24px; text-align: center; box-shadow: 0 20px 60px rgba(0,0,0,0.35); }
         .delete-modal h3 { margin-bottom: 8px; color: #0a0a0a; }
         .delete-modal p { color: #555; margin-bottom: 18px; }
         .delete-modal-actions { display: flex; justify-content: center; gap: 10px; }
 
-        /* ── Mobile ── */
         @media (max-width: 700px) {
           .listings-container { flex-direction: column; padding: 1rem; gap: 1rem; }
           .listings-sidebar { flex: none; width: 100%; }
@@ -683,8 +554,7 @@ function BookListings() {
           .radio-chip { font-size: 11px; padding: 4px 9px; }
           .book-card-img, .book-card-img-notes { height: 140px; }
           .card-btn-group { flex-wrap: wrap; }
-          .btn-primary, .btn-secondary, .btn-danger,
-          .btn-approve, .btn-admin, .btn-sold-toggle { font-size: 0.7rem; padding: 6px 10px; }
+          .btn-primary, .btn-secondary, .btn-danger, .btn-approve, .btn-admin, .btn-sold-toggle { font-size: 0.7rem; padding: 6px 10px; }
           .modal-grid { grid-template-columns: 1fr; }
           .modal-card { max-width: 100%; margin: 0; border-radius: 14px; }
           .admin-banner { padding: 8px 1rem; }
@@ -692,7 +562,6 @@ function BookListings() {
         }
       `}</style>
 
-      {/* Admin banner */}
       {isAdmin && (
         <div className="admin-banner">
           <div className="admin-banner-left">
@@ -707,8 +576,6 @@ function BookListings() {
 
       <div className="listings-page">
         <div className="listings-container">
-
-          {/* ── Sidebar ── */}
           <aside className="listings-sidebar">
             <div className="sidebar-header">
               <div className="sidebar-title">Filters</div>
@@ -744,7 +611,26 @@ function BookListings() {
                 ))}
               </div>
 
-              {/* Status filter — shown to everyone so sellers can see their own pending/sold */}
+              {typeFilter === "Notes" && (
+                <>
+                  <label className="filter-label" style={{ marginTop: "-8px" }}>File Format</label>
+                  <select className="filter-input" value={noteFormatFilter} onChange={(e) => setNoteFormatFilter(e.target.value)}>
+                    <option value="All">All Formats</option>
+                    <option value="PDF">PDF</option>
+                    <option value="JPEG">JPEG</option>
+                    <option value="PNG">PNG</option>
+                    <option value="WebP">WebP</option>
+                    <option value="MP3">MP3</option>
+                    <option value="WAV">WAV</option>
+                    <option value="CSV">CSV</option>
+                    <option value="XLS">XLS</option>
+                    <option value="PPT">PowerPoint</option>
+                    <option value="MP4">MP4 Video</option>
+                    <option value="MOV">MOV Video</option>
+                  </select>
+                </>
+              )}
+
               <div className="filter-divider" />
               <label className="filter-label">Status</label>
               <div className="radio-group">
@@ -777,16 +663,18 @@ function BookListings() {
                 <option value="Art">Arts &amp; Humanities</option>
               </select>
 
-              <label className="filter-label">Sort by Price</label>
+              {/* CHANGED: Updated label to "Sort By" and added Newest/Oldest options */}
+              <label className="filter-label">Sort By</label>
               <select className="filter-input" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
                 <option value="">Relevance (Default)</option>
+                <option value="newest">Date: Newest First</option>
+                <option value="oldest">Date: Oldest First</option>
                 <option value="lowToHigh">Price: Low to High</option>
                 <option value="highToLow">Price: High to Low</option>
               </select>
             </div>
           </aside>
 
-          {/* ── Grid ── */}
           <main className="listings-grid">
             {loading ? (
               <div className="listings-empty">
@@ -821,9 +709,17 @@ function BookListings() {
                       </div>
 
                       <div className="book-title">{book.title}</div>
+                      
+                      {/* CHANGED: Added display for the created_at date */}
                       <div className="book-author">
                         {isNotes ? (book.course_code || "") : book.author}
+                        {book.created_at && (
+                          <span style={{ display: 'block', fontSize: '0.75rem', color: '#999', marginTop: '2px' }}>
+                            Posted: {new Date(book.created_at).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
+
                       {isNotes && book.description && (
                         <div className="book-description">{book.description}</div>
                       )}
@@ -840,15 +736,11 @@ function BookListings() {
                               <button className="btn-primary" onClick={() => navigate(`/listings/${book.listing_id}`)}>
                                 Details
                               </button>
-
-                              {/* Contact — only for other users' Active listings */}
                               {!isOwnListing && (book.status || "Active") === "Active" && (
                                 <button className="btn-secondary" onClick={() => handleContact(book)}>
                                   Contact
                                 </button>
                               )}
-
-                              {/* Seller controls */}
                               {isOwnListing && !isAdmin && (
                                 <>
                                   <button className="btn-secondary" onClick={() => handleEditClick(book)}>Edit</button>
@@ -862,8 +754,6 @@ function BookListings() {
                                   <button className="btn-danger" onClick={() => setDeleteTarget(book)}>Delete</button>
                                 </>
                               )}
-
-                              {/* Admin controls */}
                               {isAdmin && (
                                 <>
                                   {book.status === "Pending" && (
