@@ -17,7 +17,7 @@ import PostBook        from "./PostBook.jsx";
 import Profile         from "./Profile.jsx";
 import Messages        from "./Messages.jsx";
 import TopNav          from "./TopNav.jsx";
-import AdminDashboard  from "./AdminDashboard.jsx";
+import AdminDashboard  from "./Admindashboard.jsx";
 import { getStoredUser, subscribeToAuthChanges } from "./auth";
 import Notifications from "./Notifications.jsx";
 
