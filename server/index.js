@@ -134,6 +134,19 @@ async function ensureSchema() {
     )
   `);
 
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS Notifications (
+      notification_id INT AUTO_INCREMENT PRIMARY KEY,
+      user_id INT NOT NULL,
+      type VARCHAR(50) NOT NULL,
+      message VARCHAR(500) NOT NULL,
+      listing_id INT,
+      is_read BOOLEAN NOT NULL DEFAULT FALSE,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
+    )
+  `);
+
   const addColumnStatements = [
     'ALTER TABLE Users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE Users ADD COLUMN verification_code_hash VARCHAR(255)',
@@ -158,7 +171,6 @@ async function ensureSchema() {
     if (error.code !== 'ER_DUP_FIELDNAME') throw error;
   }
 
-  // ModerationLog table
   await runQuery(`
     CREATE TABLE IF NOT EXISTS ModerationLog (
       log_id         INT AUTO_INCREMENT PRIMARY KEY,
@@ -242,10 +254,8 @@ app.use(
 
 app.use(express.json());
 
-// ─── Make pool available to admin router middleware ───────────────────────────
 app.set('db', pool);
 
-// ─── Admin routes ─────────────────────────────────────────────────────────────
 const adminRouter = require('./routes/admin');
 app.use('/api/admin', adminRouter);
 
@@ -355,7 +365,7 @@ app.delete("/BookListings/:id", async (req, res, next) => {
   }
 });
 
-// POST /BookListings — new listings start as Pending (awaiting admin approval)
+// POST /BookListings
 app.post("/BookListings", async (req, res, next) => {
   try {
     const { user_id, title, author, edition, isbn, price, course_code, book_condition, notes, image_url } = req.body;
@@ -483,8 +493,8 @@ app.post('/api/register', async (req, res) => {
       [normalizedEmail]
     );
 
-    const verificationCode     = generateVerificationCode();
-    const verificationHash     = hashVerificationCode(verificationCode);
+    const verificationCode      = generateVerificationCode();
+    const verificationHash      = hashVerificationCode(verificationCode);
     const verificationExpiresAt = getVerificationExpiryDate();
 
     if (existing.length > 0) {
@@ -629,7 +639,7 @@ app.post('/api/login', async (req, res) => {
         fullName: user.full_name,
         email: user.email,
         profile_image_url: user.profile_image_url,
-        role: user.role,           // ← included so frontend knows admin status
+        role: user.role,
       },
     });
   } catch (error) {
@@ -834,6 +844,63 @@ app.put("/api/users/:id/avatar", async (req, res, next) => {
   }
 });
 
+// ── Notification routes ───────────────────────────────────────────────────────
+
+app.get("/api/notifications", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    const rows = await runQuery(
+      `SELECT * FROM Notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
+      [userId]
+    );
+    res.json(rows);
+  } catch (err) { next(err); }
+});
+
+app.get("/api/notifications/unread-count", async (req, res, next) => {
+  try {
+    const { userId } = req.query;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    const rows = await runQuery(
+      `SELECT COUNT(*) AS count FROM Notifications WHERE user_id = ? AND is_read = FALSE`,
+      [userId]
+    );
+    res.json({ count: rows[0]?.count || 0 });
+  } catch (err) { next(err); }
+});
+
+app.put("/api/notifications/:id/read", async (req, res, next) => {
+  try {
+    await runQuery(
+      `UPDATE Notifications SET is_read = TRUE WHERE notification_id = ?`,
+      [req.params.id]
+    );
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+app.put("/api/notifications/read-all", async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    await runQuery(
+      `UPDATE Notifications SET is_read = TRUE WHERE user_id = ?`,
+      [userId]
+    );
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
+app.delete("/api/notifications/clear", async (req, res, next) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: "userId is required." });
+    await runQuery(`DELETE FROM Notifications WHERE user_id = ?`, [userId]);
+    res.json({ success: true });
+  } catch (err) { next(err); }
+});
+
 // ── Messaging routes ──────────────────────────────────────────────────────────
 
 app.get("/api/messages/conversations", async (req, res, next) => {
@@ -851,24 +918,24 @@ app.get("/api/messages/conversations", async (req, res, next) => {
 
     const conversations = await Promise.all(
       pairs.map(async ({ other_user_id, listing_id }) => {
-        const [lastMsg]    = await runQuery(
+        const [lastMsg]   = await runQuery(
           `SELECT content, sent_at FROM Messages WHERE listing_id = ?
            AND ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
            ORDER BY sent_at DESC LIMIT 1`,
           [listing_id, userId, other_user_id, other_user_id, userId]
         );
-        const [otherUser]  = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [other_user_id]);
-        const [book]       = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listing_id]);
-        const [unreadRow]  = await runQuery(
+        const [otherUser] = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [other_user_id]);
+        const [book]      = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listing_id]);
+        const [unreadRow] = await runQuery(
           `SELECT COUNT(*) AS unread_count FROM Messages WHERE listing_id = ? AND sender_id = ? AND receiver_id = ? AND is_read = FALSE`,
           [listing_id, other_user_id, userId]
         );
 
         return {
           other_user_id,
-          other_user_name: otherUser?.full_name || "Unknown",
+          other_user_name: otherUser?.full_name  || "Unknown",
           listing_id,
-          book_title:      book?.title          || "Unknown Book",
+          book_title:      book?.title           || "Unknown Book",
           last_message:    lastMsg?.content      || "",
           last_sent_at:    lastMsg?.sent_at      || null,
           unread_count:    unreadRow?.unread_count || 0,
@@ -918,6 +985,19 @@ app.post("/api/messages", async (req, res, next) => {
     );
 
     const [newMessage] = await runQuery("SELECT * FROM Messages WHERE message_id = ?", [result.insertId]);
+
+    // Notify the receiver
+    try {
+      const [senderUser] = await runQuery(`SELECT full_name FROM Users WHERE user_id = ?`, [senderId]);
+      const [listing]    = await runQuery(`SELECT title FROM BookListings WHERE listing_id = ?`, [listingId]);
+      const senderName   = senderUser?.full_name || "Someone";
+      const bookTitle    = listing?.title        || "a listing";
+      await runQuery(
+        `INSERT INTO Notifications (user_id, type, message, listing_id) VALUES (?, 'message', ?, ?)`,
+        [receiverId, `${senderName} sent you a message about "${bookTitle}"`, listingId]
+      );
+    } catch {}
+
     res.status(201).json(newMessage);
   } catch (err) {
     next(err);

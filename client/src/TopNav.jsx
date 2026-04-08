@@ -9,6 +9,7 @@ export default function TopNav() {
   const [menuOpen,       setMenuOpen]       = useState(false);
   const [hoveredNavLink, setHoveredNavLink] = useState(null);
   const [currentUser,    setCurrentUser]    = useState(() => getStoredUser());
+  const [unreadCount,    setUnreadCount]    = useState(0); // ADDED
 
   // Close menu on route change
   useEffect(() => { setMenuOpen(false); }, [location.pathname]);
@@ -34,6 +35,31 @@ export default function TopNav() {
     loadProfile();
     return () => { isActive = false; };
   }, [currentUser?.id]);
+
+  // ADDED: poll for unread notification count every 30 seconds
+  useEffect(() => {
+    if (!currentUser?.id) return;
+
+    async function fetchUnreadCount() {
+      try {
+        const res = await fetch(`${getApiBaseUrl()}/api/notifications/unread-count?userId=${currentUser.id}`);
+        if (!res.ok) return;
+        const data = await res.json();
+        setUnreadCount(data.count || 0);
+      } catch {}
+    }
+
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 30000);
+    return () => clearInterval(interval);
+  }, [currentUser?.id]);
+
+  // Reset unread count when visiting notifications page
+  useEffect(() => {
+    if (location.pathname === "/notifications") {
+      setUnreadCount(0);
+    }
+  }, [location.pathname]);
 
   // Prevent body scroll when menu is open
   useEffect(() => {
@@ -109,7 +135,6 @@ export default function TopNav() {
         }
         .topnav-logo:hover { opacity: 0.8; }
 
-        /* Desktop links */
         .topnav-links {
           display: flex;
           align-items: center;
@@ -159,7 +184,46 @@ export default function TopNav() {
         .topnav-avatar-btn img { width: 100%; height: 100%; object-fit: cover; }
         .topnav-divider { width: 1px; height: 20px; background: rgba(255,255,255,0.1); margin: 0 4px; }
 
-        /* Hamburger button — hidden on desktop */
+        /* ADDED: Bell button */
+        .topnav-bell {
+          position: relative;
+          width: 34px; height: 34px;
+          border-radius: 8px;
+          border: 1.5px solid transparent;
+          background: transparent;
+          color: rgba(255,255,255,0.6);
+          cursor: pointer;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 16px;
+          transition: color 0.18s, border-color 0.18s, background 0.18s;
+          flex-shrink: 0;
+        }
+        .topnav-bell:hover {
+          color: #FFBD00;
+          border-color: rgba(255,189,0,0.3);
+          background: rgba(255,189,0,0.07);
+        }
+        .topnav-bell-badge {
+          position: absolute;
+          top: -4px; right: -4px;
+          background: #ef4444;
+          color: #fff;
+          font-size: 9px;
+          font-weight: 700;
+          min-width: 16px;
+          height: 16px;
+          border-radius: 8px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 0 3px;
+          font-family: 'DM Sans', sans-serif;
+          pointer-events: none;
+        }
+
+        /* Hamburger button */
         .topnav-hamburger {
           display: none;
           flex-direction: column;
@@ -283,6 +347,23 @@ export default function TopNav() {
               {item.label}
             </span>
           ))}
+
+          {/* ADDED: Bell icon */}
+          {currentUser && (
+            <button
+              className="topnav-bell"
+              onClick={() => navigate("/notifications")}
+              title="Notifications"
+            >
+              🔔
+              {unreadCount > 0 && (
+                <span className="topnav-bell-badge">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </span>
+              )}
+            </button>
+          )}
+
           <div className="topnav-divider" />
           <span className="topnav-logout" onClick={handleLogout}>Logout</span>
         </div>
@@ -314,6 +395,18 @@ export default function TopNav() {
             {item.label}
           </div>
         ))}
+
+        {/* ADDED: Notifications in mobile drawer */}
+        {currentUser && (
+          <div className="drawer-item" onClick={() => navigate("/notifications")}>
+            🔔 Notifications
+            {unreadCount > 0 && (
+              <span style={{ marginLeft: "8px", background: "#ef4444", color: "#fff", fontSize: "10px", fontWeight: "700", padding: "2px 7px", borderRadius: "10px" }}>
+                {unreadCount}
+              </span>
+            )}
+          </div>
+        )}
 
         <div className="drawer-divider" />
         <div className="drawer-logout" onClick={handleLogout}>Logout</div>

@@ -19,6 +19,8 @@ import Messages        from "./Messages.jsx";
 import TopNav          from "./TopNav.jsx";
 import AdminDashboard  from "./AdminDashboard.jsx";
 import { getStoredUser, subscribeToAuthChanges } from "./auth";
+import Notifications from "./Notifications.jsx";
+
 
 // ─── Role guard — redirects non-admins away from /admin ──────────────────────
 function AdminGuard({ children }) {
@@ -44,6 +46,7 @@ function AppContent() {
     "/profile",
     "/messages",
     "/admin",
+    "/notifications",
   ].some(
     (path) =>
       location.pathname === path || location.pathname.startsWith("/listings/")
@@ -63,6 +66,7 @@ function AppContent() {
         <Route path="/post"         element={<PostBook />} />
         <Route path="/profile"      element={<Profile />} />
         <Route path="/messages"     element={<Messages />} />
+        <Route path="/notifications" element={<Notifications />} />
 
         {/* Admin — role-gated */}
         <Route
