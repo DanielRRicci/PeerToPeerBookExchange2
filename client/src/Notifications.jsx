@@ -80,7 +80,6 @@ export default function Notifications() {
 
   function notificationIcon(type) {
     if (type === "message") return "💬";
-    if (type === "price_drop") return "💰";
     return "🔔";
   }
 
