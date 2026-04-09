@@ -143,6 +143,39 @@ async function ensureSchema() {
     )
   `);
 
+
+  await runQuery(`
+  CREATE TABLE IF NOT EXISTS Reports (
+    report_id INT AUTO_INCREMENT PRIMARY KEY,
+    reporter_id INT NOT NULL,
+    reported_user_id INT NOT NULL,
+    listing_id INT NULL,
+    reason_type ENUM(
+      'Inappropriate messages',
+      'Inappropriate listings',
+      'Message spam',
+      'Inappropriate name',
+      'Other'
+    ) NOT NULL,
+    reason_text TEXT NOT NULL,
+    status ENUM(
+      'Open',
+      'Under Review',
+      'Resolved',
+      'Dismissed'
+    ) NOT NULL DEFAULT 'Open',
+    reviewed_by INT NULL,
+    reviewed_at TIMESTAMP NULL DEFAULT NULL,
+    admin_notes TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+
+    FOREIGN KEY (reporter_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (reported_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+    FOREIGN KEY (listing_id) REFERENCES BookListings(listing_id) ON DELETE SET NULL,
+    FOREIGN KEY (reviewed_by) REFERENCES Users(user_id) ON DELETE SET NULL
+  )
+`);
+
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Notifications (
       notification_id INT AUTO_INCREMENT PRIMARY KEY,
