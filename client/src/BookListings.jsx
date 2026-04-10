@@ -159,9 +159,11 @@ function BookListings() {
     const fetchListings = async () => {
       try {
         const baseUrl = getApiBaseUrl();
+        const viewerQuery = currentUser?.id ? `?viewerId=${currentUser.id}` : "";
+
         const [booksRes, notesRes] = await Promise.all([
-          fetch(`${baseUrl}/BookListings`),
-          fetch(`${baseUrl}/Notes`),
+          fetch(`${baseUrl}/BookListings${viewerQuery}`),
+          fetch(`${baseUrl}/Notes${viewerQuery}`),
         ]);
         const booksData = booksRes.ok ? await booksRes.json() : [];
         const notesData = notesRes.ok ? await notesRes.json() : [];

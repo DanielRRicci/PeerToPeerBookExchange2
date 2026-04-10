@@ -143,50 +143,19 @@ async function ensureSchema() {
     )
   `);
 
-
   await runQuery(`
-  CREATE TABLE IF NOT EXISTS Reports (
-    report_id INT AUTO_INCREMENT PRIMARY KEY,
-    reporter_id INT NOT NULL,
-    reported_user_id INT NOT NULL,
-    listing_id INT NULL,
-    reason_type ENUM(
-      'Inappropriate messages',
-      'Inappropriate listings',
-      'Message spam',
-      'Inappropriate name',
-      'Other'
-    ) NOT NULL,
-    reason_text TEXT NOT NULL,
-    status ENUM(
-      'Open',
-      'Under Review',
-      'Resolved',
-      'Dismissed'
-    ) NOT NULL DEFAULT 'Open',
-    reviewed_by INT NULL,
-    reviewed_at TIMESTAMP NULL DEFAULT NULL,
-    admin_notes TEXT,
-    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CREATE TABLE IF NOT EXISTS UserBlocks (
+      block_id INT AUTO_INCREMENT PRIMARY KEY,
+      blocker_id INT NOT NULL,
+      blocked_id INT NOT NULL,
+      created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
-    FOREIGN KEY (reporter_id) REFERENCES Users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (reported_user_id) REFERENCES Users(user_id) ON DELETE CASCADE,
-    FOREIGN KEY (listing_id) REFERENCES BookListings(listing_id) ON DELETE SET NULL,
-    FOREIGN KEY (reviewed_by) REFERENCES Users(user_id) ON DELETE SET NULL
-  )
-`);
+      UNIQUE KEY uq_user_blocks_pair (blocker_id, blocked_id),
 
-try {
-  await runQuery(`
-    ALTER TABLE Reports
-    ADD CONSTRAINT uq_reports_reporter_reported
-    UNIQUE (reporter_id, reported_user_id)
+      FOREIGN KEY (blocker_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+      FOREIGN KEY (blocked_id) REFERENCES Users(user_id) ON DELETE CASCADE
+    )
   `);
-} catch (error) {
-  if (error.code !== "ER_DUP_KEYNAME" && error.code !== "ER_DUP_ENTRY") {
-    throw error;
-  }
-}
 
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Notifications (
@@ -286,6 +255,40 @@ function buildPublicImageUrl(objectKey) {
   return `${base}/${objectKey}`;
 }
 
+async function areUsersBlockedEitherWay(userA, userB) {
+  if (!userA || !userB) return false;
+
+  const rows = await runQuery(
+    `SELECT block_id
+     FROM UserBlocks
+     WHERE (blocker_id = ? AND blocked_id = ?)
+        OR (blocker_id = ? AND blocked_id = ?)
+     LIMIT 1`,
+    [userA, userB, userB, userA]
+  );
+
+  return rows.length > 0;
+}
+
+async function getBlockStatusBetweenUsers(currentUserId, otherUserId) {
+  const rows = await runQuery(
+    `SELECT blocker_id, blocked_id
+     FROM UserBlocks
+     WHERE (blocker_id = ? AND blocked_id = ?)
+        OR (blocker_id = ? AND blocked_id = ?)`,
+    [currentUserId, otherUserId, otherUserId, currentUserId]
+  );
+
+  const blockedByYou = rows.some(
+    (row) => Number(row.blocker_id) === Number(currentUserId)
+  );
+
+  return {
+    blockedByYou,
+    blockedEitherWay: rows.length > 0,
+  };
+}
+
 const app = express();
 
 const allowedOrigins = [
@@ -329,7 +332,23 @@ app.get("/db-test", async (req, res, next) => {
 // GET /BookListings
 app.get("/BookListings", async (req, res, next) => {
   try {
-    const [rows] = await pool.query(`
+    const viewerId = Number(req.query.viewerId || 0);
+
+    const whereClause = viewerId > 0
+      ? `
+        WHERE NOT EXISTS (
+          SELECT 1
+          FROM UserBlocks ub
+          WHERE (ub.blocker_id = ? AND ub.blocked_id = bl.user_id)
+             OR (ub.blocker_id = bl.user_id AND ub.blocked_id = ?)
+        )
+      `
+      : "";
+
+    const params = viewerId > 0 ? [viewerId, viewerId] : [];
+
+    const [rows] = await pool.query(
+      `
       SELECT
         bl.listing_id,
         bl.user_id,
@@ -347,8 +366,12 @@ app.get("/BookListings", async (req, res, next) => {
         u.full_name AS seller_name
       FROM BookListings bl
       JOIN Users u ON u.user_id = bl.user_id
+      ${whereClause}
       ORDER BY bl.created_at DESC
-    `);
+      `,
+      params
+    );
+
     res.json(rows);
   } catch (err) {
     next(err);
@@ -458,15 +481,42 @@ app.post("/BookListings", async (req, res, next) => {
 // GET /Notes
 app.get("/Notes", async (req, res, next) => {
   try {
-    const { userId } = req.query;
-    const rows = userId
-      ? await runQuery(
-          `SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id WHERE n.user_id = ? ORDER BY n.created_at DESC`,
-          [userId]
+    const ownerUserId = Number(req.query.userId || 0);
+    const viewerId = Number(req.query.viewerId || 0);
+
+    let sql = `
+      SELECT n.*, u.full_name AS seller_name
+      FROM Notes n
+      JOIN Users u ON u.user_id = n.user_id
+    `;
+
+    const clauses = [];
+    const params = [];
+
+    if (ownerUserId > 0) {
+      clauses.push("n.user_id = ?");
+      params.push(ownerUserId);
+    }
+
+    if (viewerId > 0) {
+      clauses.push(`
+        NOT EXISTS (
+          SELECT 1
+          FROM UserBlocks ub
+          WHERE (ub.blocker_id = ? AND ub.blocked_id = n.user_id)
+             OR (ub.blocker_id = n.user_id AND ub.blocked_id = ?)
         )
-      : await runQuery(
-          `SELECT n.*, u.full_name AS seller_name FROM Notes n JOIN Users u ON u.user_id = n.user_id ORDER BY n.created_at DESC`
-        );
+      `);
+      params.push(viewerId, viewerId);
+    }
+
+    if (clauses.length > 0) {
+      sql += ` WHERE ${clauses.join(" AND ")}`;
+    }
+
+    sql += " ORDER BY n.created_at DESC";
+
+    const rows = await runQuery(sql, params);
     res.json(rows);
   } catch (err) {
     next(err);
@@ -1118,8 +1168,17 @@ app.get("/api/messages/conversations", async (req, res, next) => {
       })
     );
 
-    conversations.sort((a, b) => new Date(b.last_sent_at) - new Date(a.last_sent_at));
-    res.json(conversations);
+    const filteredConversations = [];
+
+    for (const conv of conversations) {
+      const blocked = await areUsersBlockedEitherWay(userId, conv.other_user_id);
+      if (!blocked) {
+        filteredConversations.push(conv);
+      }
+    }
+
+    filteredConversations.sort((a, b) => new Date(b.last_sent_at) - new Date(a.last_sent_at));
+    res.json(filteredConversations);
   } catch (err) {
     next(err);
   }
@@ -1128,8 +1187,8 @@ app.get("/api/messages/conversations", async (req, res, next) => {
 app.get("/api/messages", async (req, res, next) => {
   try {
     const { userId, otherUserId, listingId } = req.query;
-    if (!userId || !otherUserId || !listingId) {
-      return res.status(400).json({ error: "userId, otherUserId, and listingId are required." });
+    if (await areUsersBlockedEitherWay(userId, otherUserId)) {
+      return res.status(403).json({ error: "You cannot view this conversation." });
     }
 
     const rows = await runQuery(
@@ -1157,6 +1216,10 @@ app.post("/api/messages", async (req, res, next) => {
 
     if (!senderId || !receiverId || !listingId || !content?.trim()) {
       return res.status(400).json({ error: "senderId, receiverId, listingId, and content are required." });
+    }
+
+    if (await areUsersBlockedEitherWay(senderId, receiverId)) {
+      return res.status(403).json({ error: "You cannot message this user." });
     }
     
     if (trimmedContent.length > MAX_MESSAGE_LENGTH) { 
@@ -1233,12 +1296,63 @@ app.put("/api/messages/read", async (req, res, next) => {
       return res.status(400).json({ error: "userId, otherUserId, and listingId are required." });
     }
 
+    if (await areUsersBlockedEitherWay(userId, otherUserId)) {
+      return res.status(403).json({ error: "This conversation is unavailable." });
+    }
+
     await runQuery(
       `UPDATE Messages SET is_read = TRUE WHERE receiver_id = ? AND sender_id = ? AND listing_id = ? AND is_read = FALSE`,
       [userId, otherUserId, listingId]
     );
 
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/blocks/status", requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.currentUser.user_id);
+    const otherUserId = Number(req.query.otherUserId);
+
+    if (!otherUserId) {
+      return res.status(400).json({ error: "otherUserId is required." });
+    }
+
+    const status = await getBlockStatusBetweenUsers(currentUserId, otherUserId);
+    res.json(status);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/blocks", requireAuth, async (req, res, next) => {
+  try {
+    const blockerId = Number(req.currentUser.user_id);
+    const blockedId = Number(req.body.blockedId);
+
+    if (!blockedId) {
+      return res.status(400).json({ error: "blockedId is required." });
+    }
+
+    if (blockerId === blockedId) {
+      return res.status(400).json({ error: "You cannot block yourself." });
+    }
+
+    await runQuery(
+      `INSERT INTO UserBlocks (blocker_id, blocked_id)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE blocker_id = blocker_id`,
+      [blockerId, blockedId]
+    );
+
+    res.status(201).json({
+      success: true,
+      blockedByYou: true,
+      blockedEitherWay: true,
+      message: "User blocked successfully.",
+    });
   } catch (err) {
     next(err);
   }

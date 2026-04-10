@@ -51,6 +51,12 @@ export default function Messages() {
   });
   const [alreadyReported, setAlreadyReported] = useState(false);
   const [checkingReportStatus, setCheckingReportStatus] = useState(false);
+  const [blockStatus, setBlockStatus] = useState({
+    blockedByYou: false,
+    blockedEitherWay: false,
+  });
+  const [blockSubmitting, setBlockSubmitting] = useState(false);
+  const [showBlockModal, setShowBlockModal] = useState(false);
 
   useEffect(() => {
     async function init() {
@@ -181,10 +187,50 @@ useEffect(() => {
   fetchReportStatus();
 }, [chatTarget?.other_user_id, currentUser?.id, baseUrl]);
 
+useEffect(() => {
+  async function fetchBlockStatus() {
+    if (!chatTarget?.other_user_id || !currentUser?.id) {
+      setBlockStatus({ blockedByYou: false, blockedEitherWay: false });
+      return;
+    }
+
+    try {
+      const res = await fetch(
+        `${baseUrl}/api/blocks/status?otherUserId=${chatTarget.other_user_id}`,
+        {
+          headers: {
+            "x-user-id": currentUser.id,
+          },
+        }
+      );
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setBlockStatus({ blockedByYou: false, blockedEitherWay: false });
+        return;
+      }
+
+      setBlockStatus({
+        blockedByYou: Boolean(data.blockedByYou),
+        blockedEitherWay: Boolean(data.blockedEitherWay),
+      });
+    } catch {
+      setBlockStatus({ blockedByYou: false, blockedEitherWay: false });
+    }
+  }
+
+  fetchBlockStatus();
+}, [chatTarget?.other_user_id, currentUser?.id, baseUrl]);
+
   async function sendMessage() {
     const text = draft.trim();
     const now = Date.now();
     if (!text || !chatTarget || sending) return;
+    if (blockStatus.blockedEitherWay) {
+      setErrorMessage("You cannot message this user.");
+      return;
+    }
     if (now < cooldownUntil) { setErrorMessage("Please wait a moment before sending another message."); return; }
     if (text.length > 500) { setErrorMessage("Message must be 500 characters or less."); return;}
     setSending(true);
@@ -224,16 +270,67 @@ useEffect(() => {
     }
   }
 
-function openReportModal() {
-  if (alreadyReported) return;
+  function openReportModal() {
+    if (alreadyReported) return;
 
-  setReportData({
-    reasonType: "",
-    reasonText: "",
-  });
-  setReportStep("reason");
-  setShowReportModal(true);
-}
+    setReportData({
+      reasonType: "",
+      reasonText: "",
+    });
+    setReportStep("reason");
+    setShowReportModal(true);
+  }
+
+  function openBlockModal() {
+    if (!chatTarget || blockStatus.blockedByYou || blockStatus.blockedEitherWay) return;
+    setShowBlockModal(true);
+  }
+
+  function closeBlockModal() {
+    if (blockSubmitting) return;
+    setShowBlockModal(false);
+  }
+
+  async function handleBlock() {
+    if (!chatTarget || blockStatus.blockedByYou) return;
+
+    setBlockSubmitting(true);
+
+    try {
+      const res = await fetch(`${baseUrl}/api/blocks`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUser.id,
+        },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          blockedId: chatTarget.other_user_id,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to block user.");
+      }
+
+      setBlockStatus({
+        blockedByYou: true,
+        blockedEitherWay: true,
+      });
+
+      setShowBlockModal(false);
+      setActiveConv(null);
+      setPendingChat(null);
+      setMessages([]);
+      await refreshConversations();
+      setMobileView("list");
+    } catch (err) {
+      alert(err.message || "Failed to block user.");
+    } finally {
+      setBlockSubmitting(false);
+    }
+  }
 
   function closeReportModal() {
     setShowReportModal(false);
@@ -618,6 +715,45 @@ function openReportModal() {
           display: flex; flex-direction: column; gap: 10px;
         }
 
+        .chat-action-block {
+          background: #374151;
+          color: #fff;
+        }
+
+        .chat-action-block:hover:not(:disabled) {
+          background: #1f2937;
+        }
+
+        .chat-action-blocked {
+          background: #3a3a3a;
+          color: #cfcfcf;
+          cursor: default;
+          transform: none;
+        }
+
+        .chat-action-blocked:hover,
+        .chat-action-blocked:disabled,
+        .chat-action-blocked:disabled:hover {
+          background: #3a3a3a;
+          color: #cfcfcf;
+          transform: none;
+          cursor: default;
+          opacity: 1;
+        }
+
+        .chat-blocked-banner {
+          align-self: center;
+          background: rgba(255, 189, 0, 0.12);
+          border: 1px solid rgba(255, 189, 0, 0.35);
+          color: #fff3c4;
+          padding: 10px 14px;
+          border-radius: 10px;
+          font-size: 12px;
+          margin-bottom: 10px;
+          max-width: 520px;
+          text-align: center;
+        }
+
         .bubble-wrap   { display: flex; flex-direction: column; }
         .bubble-mine {
           max-width: 72%; align-self: flex-end;
@@ -779,6 +915,16 @@ function openReportModal() {
                   <div className="chat-header-actions">
                     <button
                       className={`chat-action-btn ${
+                        blockStatus.blockedEitherWay ? "chat-action-blocked" : "chat-action-block"
+                      }`}
+                      onClick={blockStatus.blockedEitherWay ? undefined : openBlockModal}
+                      disabled={blockSubmitting || blockStatus.blockedEitherWay}
+                    >
+                      {blockStatus.blockedEitherWay ? "Blocked" : "Block"}
+                    </button>
+
+                    <button
+                      className={`chat-action-btn ${
                         alreadyReported ? "chat-action-reported" : "chat-action-report"
                       }`}
                       onClick={alreadyReported ? undefined : openReportModal}
@@ -791,6 +937,12 @@ function openReportModal() {
               </div>
 
               <div className="chat-messages">
+                {blockStatus.blockedEitherWay && (
+                  <div className="chat-blocked-banner">
+                    This conversation is unavailable because one of you has blocked the other.
+                  </div>
+                )}
+
                 {pendingChat && messages.length === 0 && (
                   <div className="chat-pending-prompt">
                     <div className="chat-pending-icon">👋</div>
@@ -816,15 +968,24 @@ function openReportModal() {
               <div className="chat-input-bar">
                 <input
                   className="chat-text-input"
-                  placeholder="Type a message…"
+                  placeholder={blockStatus.blockedEitherWay ? "Messaging unavailable." : "Type a message…"}
                   value={draft}
-                  onChange={(e) => { setDraft(e.target.value); if (errorMessage) setErrorMessage(""); }}
+                  onChange={(e) => {
+                    setDraft(e.target.value);
+                    if (errorMessage) setErrorMessage("");
+                  }}
                   onKeyDown={handleKeyDown}
+                  disabled={blockStatus.blockedEitherWay}
                 />
                 <button
                   className="chat-send-btn"
                   onClick={sendMessage}
-                  disabled={sending || !draft.trim() || Date.now() < cooldownUntil}
+                  disabled={
+                    blockStatus.blockedEitherWay ||
+                    sending ||
+                    !draft.trim() ||
+                    Date.now() < cooldownUntil
+                  }
                 >
                   Send
                 </button>
@@ -847,7 +1008,58 @@ function openReportModal() {
           )}
         </div>
       </div>
+            {showBlockModal && (
+        <div
+          className="report-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeBlockModal();
+          }}
+        >
+          <div className="report-modal-card">
+            <div className="report-modal-header">
+              <button
+                className="report-modal-close"
+                onClick={closeBlockModal}
+                aria-label="Close block modal"
+                disabled={blockSubmitting}
+              >
+                ×
+              </button>
 
+              <div className="report-modal-title">Block User</div>
+            </div>
+
+            <div className="report-modal-body">
+              <div className="report-modal-copy">
+                Block <strong>{chatTarget?.other_user_name}</strong>?
+              </div>
+
+              <div className="report-modal-copy" style={{ marginTop: "-4px" }}>
+                You will no longer be able to message each other, and their listings will be hidden from you.
+              </div>
+
+              <div className="report-modal-actions">
+                <button
+                  className="report-secondary-btn"
+                  onClick={closeBlockModal}
+                  disabled={blockSubmitting}
+                >
+                  Cancel
+                </button>
+
+                <button
+                  className="report-primary-btn"
+                  onClick={handleBlock}
+                  disabled={blockSubmitting}
+                  style={{ background: "#991b1b", color: "#fff" }}
+                >
+                  {blockSubmitting ? "Blocking..." : "Block User"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       {showReportModal && (
         <div
           className="report-modal-overlay"

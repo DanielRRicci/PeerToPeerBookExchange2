@@ -225,13 +225,18 @@ export default function BookDetail() {
     reasonType: "",
     reasonText: "",
   });
+  const [blockStatus, setBlockStatus] = useState({
+    blockedByYou: false,
+    blockedEitherWay: false,
+  });
 
   useEffect(() => {
     async function load() {
       try {
         const baseUrl = getApiBaseUrl();
 
-        const listingRes = await fetch(`${baseUrl}/BookListings`);
+        const viewerQuery = currentUser?.id ? `?viewerId=${currentUser.id}` : "";
+        const listingRes = await fetch(`${baseUrl}/BookListings${viewerQuery}`);
         if (!listingRes.ok) { setError("Could not reach server."); setLoading(false); return; }
         const allListings = await listingRes.json();
 
@@ -322,6 +327,42 @@ export default function BookDetail() {
     }
 
     fetchReportStatus();
+  }, [book?.user_id, currentUser?.id]);
+
+  useEffect(() => {
+    async function fetchBlockStatus() {
+      if (!book?.user_id || !currentUser?.id || currentUser.id === book.user_id) {
+        setBlockStatus({ blockedByYou: false, blockedEitherWay: false });
+        return;
+      }
+
+      try {
+        const res = await fetch(
+          `${getApiBaseUrl()}/api/blocks/status?otherUserId=${book.user_id}`,
+          {
+            headers: {
+              "x-user-id": currentUser.id,
+            },
+          }
+        );
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          setBlockStatus({ blockedByYou: false, blockedEitherWay: false });
+          return;
+        }
+
+        setBlockStatus({
+          blockedByYou: Boolean(data.blockedByYou),
+          blockedEitherWay: Boolean(data.blockedEitherWay),
+        });
+      } catch {
+        setBlockStatus({ blockedByYou: false, blockedEitherWay: false });
+      }
+    }
+
+    fetchBlockStatus();
   }, [book?.user_id, currentUser?.id]);
 
   const displayImages = images.length > 0 ? images : [FALLBACK_IMG];
@@ -1000,9 +1041,15 @@ export default function BookDetail() {
                       <button
                         className="detail-btn-contact"
                         onClick={handleContact}
-                        disabled={isOwn || isSold}
-                      >
-                        {isOwn ? "Your Listing" : isSold ? "Sold" : "Contact Seller"}
+                        disabled={isOwn || isSold || blockStatus.blockedEitherWay}
+                        >
+                          {isOwn
+                            ? "Your Listing"
+                            : isSold
+                            ? "Sold"
+                            : blockStatus.blockedEitherWay
+                            ? "Blocked"
+                            : "Contact Seller"}
                       </button>
                       <button className="detail-btn-back" onClick={() => navigate("/booklistings")}>
                         ← Back
