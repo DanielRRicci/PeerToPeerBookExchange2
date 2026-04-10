@@ -40,6 +40,16 @@ export default function Messages() {
   // Mobile: "list" shows sidebar, "chat" shows chat panel
   const [mobileView,    setMobileView]    = useState("list");
 
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportStep, setReportStep] = useState("reason");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [reportData, setReportData] = useState({
+    reasonType: "",
+    reasonText: "",
+  });
+  const [alreadyReported, setAlreadyReported] = useState(false);
+  const [checkingReportStatus, setCheckingReportStatus] = useState(false);
+
   useEffect(() => {
     async function init() {
       try {
@@ -134,6 +144,41 @@ export default function Messages() {
 
   const chatTarget = activeConv || pendingChat;
 
+useEffect(() => {
+  async function fetchReportStatus() {
+    if (!chatTarget?.other_user_id || !currentUser?.id) {
+      setAlreadyReported(false);
+      return;
+    }
+
+    setCheckingReportStatus(true);
+
+    try {
+      const res = await fetch(
+        `${baseUrl}/api/reports/status?reportedUserId=${chatTarget.other_user_id}`,
+        {
+          headers: {
+            "x-user-id": currentUser.id,
+          },
+        }
+      );
+
+      const data = await res.json();
+      if (res.ok) {
+        setAlreadyReported(Boolean(data.reported));
+      } else {
+        setAlreadyReported(false);
+      }
+    } catch {
+      setAlreadyReported(false);
+    } finally {
+      setCheckingReportStatus(false);
+    }
+  }
+
+  fetchReportStatus();
+}, [chatTarget?.other_user_id, currentUser?.id, baseUrl]);
+
   async function sendMessage() {
     const text = draft.trim();
     if (!text || !chatTarget || sending) return;
@@ -172,6 +217,79 @@ export default function Messages() {
       setSending(false);
     }
   }
+
+function openReportModal() {
+  if (alreadyReported) return;
+
+  setReportData({
+    reasonType: "",
+    reasonText: "",
+  });
+  setReportStep("reason");
+  setShowReportModal(true);
+}
+
+  function closeReportModal() {
+    setShowReportModal(false);
+    setReportStep("reason");
+    setReportData({
+      reasonType: "",
+      reasonText: "",
+    });
+  }
+
+  function goToReportDetails() {
+    if (!reportData.reasonType) {
+      alert("Please choose a reason first.");
+      return;
+    }
+    setReportStep("details");
+  }
+
+  function goBackToReasonPicker() {
+    setReportStep("reason");
+  }
+
+  async function handleSubmitReport() {
+  if (!chatTarget || alreadyReported) return;
+
+  const trimmedReasonText = reportData.reasonText.trim();
+  if (!trimmedReasonText) {
+    alert("Please enter a detailed explanation.");
+    return;
+  }
+
+  setReportSubmitting(true);
+
+  try {
+    const res = await fetch(`${baseUrl}/api/reports`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-user-id": currentUser.id,
+      },
+      body: JSON.stringify({
+        userId: currentUser.id,
+        reportedUserId: chatTarget.other_user_id,
+        listingId: chatTarget.listing_id,
+        reasonType: reportData.reasonType,
+        reasonText: trimmedReasonText,
+      }),
+    });
+
+    const data = await res.json();
+    if (!res.ok) {
+      throw new Error(data.error || "Failed to submit report.");
+    }
+
+    setAlreadyReported(true);
+    closeReportModal();
+  } catch (err) {
+    alert(err.message || "Failed to submit report.");
+  } finally {
+    setReportSubmitting(false);
+  }
+}
 
   function handleKeyDown(e) {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendMessage(); }
@@ -267,6 +385,226 @@ export default function Messages() {
           background: #FFBD00; color: #0a0a0a;
           font-size: 0.65rem; font-weight: 700; padding: 3px 11px;
           border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+
+        .chat-header-main {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          min-width: 0;
+          flex-wrap: wrap;
+        }
+
+        .chat-header-spacer {
+          flex: 1;
+        }
+
+        .chat-header-actions {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-left: auto;
+        }
+
+        .chat-action-btn {
+          border: none;
+          border-radius: 999px;
+          padding: 7px 12px;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+          cursor: pointer;
+          transition: transform 0.15s, background 0.15s, color 0.15s, opacity 0.15s;
+        }
+
+        .chat-action-btn:hover:not(:disabled) {
+          transform: translateY(-1px);
+        }
+
+        .chat-action-report {
+          background: #991b1b;
+          color: #fff;
+        }
+
+        .chat-action-report:hover:not(:disabled) {
+          background: #7f1d1d;
+        }
+
+        .chat-action-reported {
+          background: #4b2e2e;
+          color: #d7c2c2;
+          cursor: default;
+          transform: none;
+        }
+
+        .chat-action-reported:hover,
+        .chat-action-reported:disabled,
+        .chat-action-reported:disabled:hover {
+          background: #4b2e2e;
+          color: #d7c2c2;
+          transform: none;
+          cursor: default;
+          opacity: 1;
+        }
+
+        .report-modal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 500;
+          background: rgba(0,0,0,0.68);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
+
+        .report-modal-card {
+          width: 100%;
+          max-width: 460px;
+          background: #fff;
+          border-radius: 18px;
+          overflow: hidden;
+          box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+        }
+
+        .report-modal-header {
+          position: relative;
+          background: #0a0a0a;
+          border-bottom: 3px solid #FFBD00;
+          padding: 20px 24px 18px 24px;
+        }
+
+        .report-modal-close {
+          position: absolute;
+          top: 14px;
+          left: 16px;
+          width: 34px;
+          height: 34px;
+          border: none;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.08);
+          color: #FFBD00;
+          font-size: 24px;
+          line-height: 1;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .report-modal-close:hover {
+          background: rgba(255,189,0,0.16);
+        }
+
+        .report-modal-title {
+          text-align: center;
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 28px;
+          letter-spacing: 2px;
+          color: #FFBD00;
+        }
+
+        .report-modal-body {
+          padding: 22px 24px 24px;
+        }
+
+        .report-modal-copy {
+          font-size: 13px;
+          color: #666;
+          line-height: 1.5;
+          margin-bottom: 16px;
+        }
+
+        .report-reason-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-bottom: 18px;
+        }
+
+        .report-reason-btn {
+          width: 100%;
+          text-align: left;
+          padding: 12px 14px;
+          border: 1.5px solid #e8e8e8;
+          border-radius: 10px;
+          background: #fafafa;
+          color: #0a0a0a;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: border-color 0.15s, background 0.15s, transform 0.15s;
+        }
+
+        .report-reason-btn:hover {
+          border-color: #FFBD00;
+          background: #fffdf2;
+        }
+
+        .report-reason-btn.selected {
+          border-color: #FFBD00;
+          background: #fff7cc;
+        }
+
+        .report-selected-reason {
+          font-size: 12px;
+          color: #444;
+          margin-bottom: 12px;
+        }
+
+        .report-details-textarea {
+          width: 100%;
+          min-height: 120px;
+          resize: vertical;
+          padding: 12px 13px;
+          border: 1.5px solid #e8e8e8;
+          border-radius: 10px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          background: #fafafa;
+          outline: none;
+        }
+
+        .report-details-textarea:focus {
+          border-color: #FFBD00;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
+        }
+
+        .report-modal-actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 16px;
+        }
+
+        .report-primary-btn,
+        .report-secondary-btn {
+          flex: 1;
+          border: none;
+          border-radius: 10px;
+          padding: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .report-primary-btn {
+          background: #FFBD00;
+          color: #0a0a0a;
+        }
+
+        .report-primary-btn:hover {
+          background: #e6a800;
+        }
+
+        .report-secondary-btn {
+          background: #0a0a0a;
+          color: #FFBD00;
+        }
+
+        .report-secondary-btn:hover {
+          background: #222;
         }
 
         .chat-messages {
@@ -416,16 +754,34 @@ export default function Messages() {
           ) : (
             <>
               <div className="chat-header">
-                {/* Back button — mobile only */}
                 <button
                   className="chat-header-back"
                   onClick={() => setMobileView("list")}
                   aria-label="Back to conversations"
-                >‹</button>
-                <div>
+                >
+                  ‹
+                </button>
+
+                <div className="chat-header-main">
                   <div className="chat-header-name">{chatTarget.other_user_name}</div>
+                  <div className="chat-header-book">{chatTarget.book_title}</div>
                 </div>
-                <div className="chat-header-book">{chatTarget.book_title}</div>
+
+                <div className="chat-header-spacer" />
+
+                {!pendingChat && (
+                  <div className="chat-header-actions">
+                    <button
+                      className={`chat-action-btn ${
+                        alreadyReported ? "chat-action-reported" : "chat-action-report"
+                      }`}
+                      onClick={alreadyReported ? undefined : openReportModal}
+                      disabled={alreadyReported || checkingReportStatus}
+                    >
+                      {alreadyReported ? "Reported" : "Report"}
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="chat-messages">
@@ -471,6 +827,112 @@ export default function Messages() {
           )}
         </div>
       </div>
+
+      {showReportModal && (
+        <div
+          className="report-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeReportModal();
+          }}
+        >
+          <div className="report-modal-card">
+            <div className="report-modal-header">
+              <button
+                className="report-modal-close"
+                onClick={closeReportModal}
+                aria-label="Close report modal"
+                disabled={reportSubmitting}
+              >
+                ×
+              </button>
+
+              <div className="report-modal-title">
+                {reportStep === "reason" ? "Report User" : "Report Details"}
+              </div>
+            </div>
+
+            <div className="report-modal-body">
+              {reportStep === "reason" && (
+                <>
+                  <div className="report-modal-copy">
+                    Choose the reason that best matches your complaint.
+                  </div>
+
+                  <div className="report-reason-list">
+                    {[
+                      "Inappropriate messages",
+                      "Inappropriate listings",
+                      "Message spam",
+                      "Inappropriate name",
+                      "Other",
+                    ].map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        className={`report-reason-btn${
+                          reportData.reasonType === reason ? " selected" : ""
+                        }`}
+                        onClick={() =>
+                          setReportData((prev) => ({ ...prev, reasonType: reason }))
+                        }
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button className="report-primary-btn" onClick={goToReportDetails}>
+                    Next
+                  </button>
+                </>
+              )}
+
+              {reportStep === "details" && (
+                <>
+                  <div className="report-modal-copy">
+                    Add a more detailed explanation for the admin review.
+                  </div>
+
+                  <div className="report-selected-reason">
+                    Reason: <strong>{reportData.reasonType}</strong>
+                  </div>
+
+                  <textarea
+                    className="report-details-textarea"
+                    value={reportData.reasonText}
+                    onChange={(e) =>
+                      setReportData((prev) => ({
+                        ...prev,
+                        reasonText: e.target.value,
+                      }))
+                    }
+                    placeholder="Describe what happened..."
+                    disabled={reportSubmitting}
+                  />
+
+                  <div className="report-modal-actions">
+                    <button
+                      className="report-secondary-btn"
+                      onClick={goBackToReasonPicker}
+                      disabled={reportSubmitting}
+                    >
+                      Back
+                    </button>
+
+                    <button
+                      className="report-primary-btn"
+                      onClick={handleSubmitReport}
+                      disabled={reportSubmitting}
+                    >
+                      {reportSubmitting ? "Submitting..." : "Submit"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

@@ -176,6 +176,18 @@ async function ensureSchema() {
   )
 `);
 
+try {
+  await runQuery(`
+    ALTER TABLE Reports
+    ADD CONSTRAINT uq_reports_reporter_reported
+    UNIQUE (reporter_id, reported_user_id)
+  `);
+} catch (error) {
+  if (error.code !== "ER_DUP_KEYNAME" && error.code !== "ER_DUP_ENTRY") {
+    throw error;
+  }
+}
+
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Notifications (
       notification_id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1181,6 +1193,112 @@ app.put("/api/messages/read", async (req, res, next) => {
     );
 
     res.json({ success: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/reports/status", requireAuth, async (req, res, next) => {
+  try {
+    const reporterId = Number(req.currentUser.user_id);
+    const reportedUserId = Number(req.query.reportedUserId);
+
+    if (!reportedUserId) {
+      return res.status(400).json({ error: "reportedUserId is required." });
+    }
+
+    const rows = await runQuery(
+      `SELECT report_id
+       FROM Reports
+       WHERE reporter_id = ? AND reported_user_id = ?
+       LIMIT 1`,
+      [reporterId, reportedUserId]
+    );
+
+    res.json({ reported: rows.length > 0 });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/reports", requireAuth, async (req, res, next) => {
+  try {
+    const reporterId = Number(req.currentUser.user_id);
+    const { reportedUserId, listingId, reasonType, reasonText } = req.body;
+
+    const validReasonTypes = [
+      "Inappropriate messages",
+      "Inappropriate listings",
+      "Message spam",
+      "Inappropriate name",
+      "Other",
+    ];
+
+    if (!reportedUserId || !reasonType || !String(reasonText || "").trim()) {
+      return res.status(400).json({
+        error: "reportedUserId, reasonType, and reasonText are required.",
+      });
+    }
+
+    if (!validReasonTypes.includes(reasonType)) {
+      return res.status(400).json({ error: "Invalid reason type." });
+    }
+
+    const existing = await runQuery(
+      `SELECT report_id
+       FROM Reports
+       WHERE reporter_id = ? AND reported_user_id = ?
+       LIMIT 1`,
+      [reporterId, Number(reportedUserId)]
+    );
+
+    if (existing.length > 0) {
+      return res.status(200).json({
+        success: true,
+        alreadyReported: true,
+        message: "User has already been reported.",
+      });
+    }
+
+    await runQuery(
+      `INSERT INTO Reports
+       (reporter_id, reported_user_id, listing_id, reason_type, reason_text, status)
+       VALUES (?, ?, ?, ?, ?, 'Open')`,
+      [
+        reporterId,
+        Number(reportedUserId),
+        listingId ? Number(listingId) : null,
+        reasonType,
+        String(reasonText).trim(),
+      ]
+    );
+
+    const [reportedUser] = await runQuery(
+      `SELECT full_name
+      FROM Users
+      WHERE user_id = ?
+      LIMIT 1`,
+      [Number(reportedUserId)]
+    );
+
+    const reportedName = reportedUser?.full_name || "that user";
+
+    await runQuery(
+      `INSERT INTO Notifications (user_id, type, message, listing_id, is_read)
+      VALUES (?, ?, ?, ?, FALSE)`,
+      [
+        reporterId,
+        "report",
+        `Thanks for your report on ${reportedName} - it’s been received. We’ll review it as soon as possible. Thank you for helping keep Peer Exchange safe.`,
+        listingId ? Number(listingId) : null,
+      ]
+    );
+
+    res.status(201).json({
+      success: true,
+      alreadyReported: false,
+      message: "Report submitted.",
+    });
   } catch (err) {
     next(err);
   }

@@ -207,6 +207,25 @@ export default function BookDetail() {
   const [loading,      setLoading]      = useState(true);
   const [error,        setError]        = useState("");
 
+  const currentUser = (() => {
+    try {
+      const raw = localStorage.getItem("bookExchangeUser");
+      return raw ? JSON.parse(raw) : null;
+    } catch {
+      return null;
+    }
+  })();
+
+  const [showReportModal, setShowReportModal] = useState(false);
+  const [reportStep, setReportStep] = useState("reason");
+  const [reportSubmitting, setReportSubmitting] = useState(false);
+  const [alreadyReported, setAlreadyReported] = useState(false);
+  const [checkingReportStatus, setCheckingReportStatus] = useState(false);
+  const [reportData, setReportData] = useState({
+    reasonType: "",
+    reasonText: "",
+  });
+
   useEffect(() => {
     async function load() {
       try {
@@ -270,9 +289,45 @@ export default function BookDetail() {
     load();
   }, [id]);
 
+  useEffect(() => {
+    async function fetchReportStatus() {
+      if (!book?.user_id || !currentUser?.id || currentUser.id === book.user_id) {
+        setAlreadyReported(false);
+        return;
+      }
+
+      setCheckingReportStatus(true);
+
+      try {
+        const res = await fetch(
+          `${getApiBaseUrl()}/api/reports/status?reportedUserId=${book.user_id}`,
+          {
+            headers: {
+              "x-user-id": currentUser.id,
+            },
+          }
+        );
+
+        const data = await res.json();
+        if (res.ok) {
+          setAlreadyReported(Boolean(data.reported));
+        } else {
+          setAlreadyReported(false);
+        }
+      } catch {
+        setAlreadyReported(false);
+      } finally {
+        setCheckingReportStatus(false);
+      }
+    }
+
+    fetchReportStatus();
+  }, [book?.user_id, currentUser?.id]);
+
   const displayImages = images.length > 0 ? images : [FALLBACK_IMG];
   const count         = displayImages.length;
   const condStyle     = conditionColor(book?.book_condition);
+  const isOwn         = currentUser && book && currentUser.id === book.user_id;
 
   function prevImg() { setActiveImg((i) => (i - 1 + count) % count); }
   function nextImg() { setActiveImg((i) => (i + 1) % count); }
@@ -290,6 +345,79 @@ export default function BookDetail() {
         bookTitle:    book.title,
       },
     });
+  }
+
+  function openReportModal() {
+    if (alreadyReported) return;
+
+    setReportData({
+      reasonType: "",
+      reasonText: "",
+    });
+    setReportStep("reason");
+    setShowReportModal(true);
+  }
+
+  function closeReportModal() {
+    setShowReportModal(false);
+    setReportStep("reason");
+    setReportData({
+      reasonType: "",
+      reasonText: "",
+    });
+  }
+
+  function goToReportDetails() {
+    if (!reportData.reasonType) {
+      alert("Please choose a reason first.");
+      return;
+    }
+    setReportStep("details");
+  }
+
+  function goBackToReasonPicker() {
+    setReportStep("reason");
+  }
+
+  async function handleSubmitListingReport() {
+    if (!book || !currentUser || alreadyReported) return;
+
+    const trimmedReasonText = reportData.reasonText.trim();
+    if (!trimmedReasonText) {
+      alert("Please enter a detailed explanation.");
+      return;
+    }
+
+    setReportSubmitting(true);
+
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/reports`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUser.id,
+        },
+        body: JSON.stringify({
+          userId: currentUser.id,
+          reportedUserId: book.user_id,
+          listingId: book.listing_id,
+          reasonType: reportData.reasonType,
+          reasonText: trimmedReasonText,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to submit report.");
+      }
+
+      setAlreadyReported(true);
+      closeReportModal();
+    } catch (err) {
+      alert(err.message || "Failed to submit report.");
+    } finally {
+      setReportSubmitting(false);
+    }
   }
 
   return (
@@ -484,6 +612,202 @@ export default function BookDetail() {
         }
         .detail-btn-back:hover { background: #f0f0f0; }
 
+        .detail-report-btn {
+          margin-left: auto;
+          border: none;
+          border-radius: 999px;
+          padding: 7px 14px;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 0.8px;
+          text-transform: uppercase;
+          background: #991b1b;
+          color: #fff;
+          cursor: pointer;
+          transition: transform 0.15s, background 0.15s, color 0.15s;
+        }
+
+        .detail-report-btn:hover:not(:disabled) {
+          background: #7f1d1d;
+          transform: translateY(-1px);
+        }
+
+        .detail-report-btn-reported {
+          background: #4b2e2e;
+          color: #d7c2c2;
+          cursor: default;
+          transform: none;
+        }
+
+        .detail-report-btn-reported:hover,
+        .detail-report-btn-reported:disabled,
+        .detail-report-btn-reported:disabled:hover {
+          background: #4b2e2e;
+          color: #d7c2c2;
+          transform: none;
+          cursor: default;
+          opacity: 1;
+        }
+
+        .detail-report-modal-overlay {
+          position: fixed;
+          inset: 0;
+          z-index: 1200;
+          background: rgba(0,0,0,0.68);
+          backdrop-filter: blur(4px);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
+
+        .detail-report-modal-card {
+          width: 100%;
+          max-width: 460px;
+          background: #fff;
+          border-radius: 18px;
+          overflow: hidden;
+          box-shadow: 0 30px 80px rgba(0,0,0,0.5);
+        }
+
+        .detail-report-modal-header {
+          position: relative;
+          background: #0a0a0a;
+          border-bottom: 3px solid #FFBD00;
+          padding: 20px 24px 18px 24px;
+        }
+
+        .detail-report-modal-close {
+          position: absolute;
+          top: 14px;
+          left: 16px;
+          width: 34px;
+          height: 34px;
+          border: none;
+          border-radius: 50%;
+          background: rgba(255,255,255,0.08);
+          color: #FFBD00;
+          font-size: 24px;
+          line-height: 1;
+          cursor: pointer;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+        }
+
+        .detail-report-modal-close:hover {
+          background: rgba(255,189,0,0.16);
+        }
+
+        .detail-report-modal-title {
+          text-align: center;
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 28px;
+          letter-spacing: 2px;
+          color: #FFBD00;
+        }
+
+        .detail-report-modal-body {
+          padding: 22px 24px 24px;
+        }
+
+        .detail-report-modal-copy {
+          font-size: 13px;
+          color: #666;
+          line-height: 1.5;
+          margin-bottom: 16px;
+        }
+
+        .detail-report-reason-list {
+          display: flex;
+          flex-direction: column;
+          gap: 10px;
+          margin-bottom: 18px;
+        }
+
+        .detail-report-reason-btn {
+          width: 100%;
+          text-align: left;
+          padding: 12px 14px;
+          border: 1.5px solid #e8e8e8;
+          border-radius: 10px;
+          background: #fafafa;
+          color: #0a0a0a;
+          font-size: 13px;
+          font-weight: 600;
+          cursor: pointer;
+          transition: border-color 0.15s, background 0.15s;
+        }
+
+        .detail-report-reason-btn:hover {
+          border-color: #FFBD00;
+          background: #fffdf2;
+        }
+
+        .detail-report-reason-btn.selected {
+          border-color: #FFBD00;
+          background: #fff7cc;
+        }
+
+        .detail-report-selected-reason {
+          font-size: 12px;
+          color: #444;
+          margin-bottom: 12px;
+        }
+
+        .detail-report-details-textarea {
+          width: 100%;
+          min-height: 120px;
+          resize: vertical;
+          padding: 12px 13px;
+          border: 1.5px solid #e8e8e8;
+          border-radius: 10px;
+          font-family: 'DM Sans', sans-serif;
+          font-size: 13px;
+          background: #fafafa;
+          outline: none;
+        }
+
+        .detail-report-details-textarea:focus {
+          border-color: #FFBD00;
+          background: #fff;
+          box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
+        }
+
+        .detail-report-modal-actions {
+          display: flex;
+          gap: 10px;
+          margin-top: 16px;
+        }
+
+        .detail-report-primary-btn,
+        .detail-report-secondary-btn {
+          flex: 1;
+          border: none;
+          border-radius: 10px;
+          padding: 12px;
+          font-weight: 700;
+          cursor: pointer;
+        }
+
+        .detail-report-primary-btn {
+          background: #FFBD00;
+          color: #0a0a0a;
+        }
+
+        .detail-report-primary-btn:hover {
+          background: #e6a800;
+        }
+
+        .detail-report-secondary-btn {
+          background: #0a0a0a;
+          color: #FFBD00;
+        }
+
+        .detail-report-secondary-btn:hover {
+          background: #222;
+        }
+
         .detail-state {
           position: relative; z-index: 1;
           display: flex; flex-direction: column;
@@ -587,6 +911,18 @@ export default function BookDetail() {
                       {book.status}
                     </span>
                   )}
+
+                  {currentUser && !isOwn && (
+                    <button
+                      className={`detail-report-btn ${
+                        alreadyReported ? "detail-report-btn-reported" : ""
+                      }`}
+                      onClick={alreadyReported ? undefined : openReportModal}
+                      disabled={alreadyReported || checkingReportStatus}
+                    >
+                      {alreadyReported ? "Reported" : "Report"}
+                    </button>
+                  )}
                 </div>
 
                 <div className="detail-divider" />
@@ -658,9 +994,6 @@ export default function BookDetail() {
                 )}
 
                 {(() => {
-                  const stored = localStorage.getItem("bookExchangeUser");
-                  const me = stored ? JSON.parse(stored) : null;
-                  const isOwn = me && me.id === book.user_id;
                   const isSold = (book.status || "").toLowerCase() === "sold";
                   return (
                     <div className="detail-btn-row">
@@ -682,6 +1015,110 @@ export default function BookDetail() {
           </div>
         )}
       </div>
+
+      {showReportModal && (
+        <div
+          className="detail-report-modal-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) closeReportModal();
+          }}
+        >
+          <div className="detail-report-modal-card">
+            <div className="detail-report-modal-header">
+              <button
+                className="detail-report-modal-close"
+                onClick={closeReportModal}
+                aria-label="Close report modal"
+                disabled={reportSubmitting}
+              >
+                ×
+              </button>
+
+              <div className="detail-report-modal-title">
+                {reportStep === "reason" ? "Report Listing" : "Report Details"}
+              </div>
+            </div>
+
+            <div className="detail-report-modal-body">
+              {reportStep === "reason" && (
+                <>
+                  <div className="detail-report-modal-copy">
+                    Choose the reason that best matches your complaint.
+                  </div>
+
+                  <div className="detail-report-reason-list">
+                    {[
+                      "Inappropriate listings",
+                      "Inappropriate name",
+                      "Other",
+                    ].map((reason) => (
+                      <button
+                        key={reason}
+                        type="button"
+                        className={`detail-report-reason-btn${
+                          reportData.reasonType === reason ? " selected" : ""
+                        }`}
+                        onClick={() =>
+                          setReportData((prev) => ({ ...prev, reasonType: reason }))
+                        }
+                      >
+                        {reason}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button className="detail-report-primary-btn" onClick={goToReportDetails}>
+                    Next
+                  </button>
+                </>
+              )}
+
+              {reportStep === "details" && (
+                <>
+                  <div className="detail-report-modal-copy">
+                    Add a more detailed explanation for the admin review.
+                  </div>
+
+                  <div className="detail-report-selected-reason">
+                    Reason: <strong>{reportData.reasonType}</strong>
+                  </div>
+
+                  <textarea
+                    className="detail-report-details-textarea"
+                    value={reportData.reasonText}
+                    onChange={(e) =>
+                      setReportData((prev) => ({
+                        ...prev,
+                        reasonText: e.target.value,
+                      }))
+                    }
+                    placeholder="Describe what is wrong with this listing..."
+                    disabled={reportSubmitting}
+                  />
+
+                  <div className="detail-report-modal-actions">
+                    <button
+                      className="detail-report-secondary-btn"
+                      onClick={goBackToReasonPicker}
+                      disabled={reportSubmitting}
+                    >
+                      Back
+                    </button>
+
+                    <button
+                      className="detail-report-primary-btn"
+                      onClick={handleSubmitListingReport}
+                      disabled={reportSubmitting}
+                    >
+                      {reportSubmitting ? "Submitting..." : "Submit"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
 
       {lightboxOpen && (
         <Lightbox
