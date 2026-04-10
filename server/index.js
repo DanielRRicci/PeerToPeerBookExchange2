@@ -1137,9 +1137,55 @@ app.get("/api/messages", async (req, res, next) => {
 app.post("/api/messages", async (req, res, next) => {
   try {
     const { senderId, receiverId, listingId, content } = req.body;
+    const trimmedContent = String(content || "").trim();
+    const MAX_MESSAGE_LENGTH = 500;
+    const RATE_LIMIT_COUNT = 3;
+    const RATE_LIMIT_SECONDS = 10;
+    const DUPLICATE_BLOCK_SECONDS = 30;
 
     if (!senderId || !receiverId || !listingId || !content?.trim()) {
       return res.status(400).json({ error: "senderId, receiverId, listingId, and content are required." });
+    }
+    
+    if (trimmedContent.length > MAX_MESSAGE_LENGTH) { 
+      return res.status(400).json({ error: `Message must be ${MAX_MESSAGE_LENGTH} characters or less.`});
+    }
+
+    // Rate limit: max 3 messages in 10 seconds from this sender
+    const [rateLimitRow] = await runQuery(
+      `
+      SELECT COUNT(*) AS message_count
+      FROM Messages
+      WHERE sender_id = ?
+        AND receiver_id = ?
+        AND listing_id = ?
+        AND sent_at >= (NOW() - INTERVAL ? SECOND)
+      `,
+      [senderId, receiverId, listingId, RATE_LIMIT_SECONDS]
+    );
+
+    if ((rateLimitRow?.message_count || 0) >= RATE_LIMIT_COUNT) {
+      return res.status(429).json({ error: "You are sending messages too quickly. Please wait a moment."});
+    }
+    
+    // Duplicate check: block exact same message within last 30 seconds
+    const [duplicateRow] = await runQuery(
+      `
+      SELECT message_id
+      FROM Messages
+      WHERE sender_id = ?
+        AND receiver_id = ?
+        AND listing_id = ?
+        AND LOWER(TRIM(content)) = LOWER(?)
+        AND sent_at >= (NOW() - INTERVAL ? SECOND)
+      LIMIT 1
+      `,
+      [senderId, receiverId, listingId, trimmedContent, DUPLICATE_BLOCK_SECONDS]
+    );
+
+    if (duplicateRow) {
+      return res.status(400).json({ error: "Duplicate message detected. Please do not send the same message again right away."
+      });
     }
 
     const result = await runQuery(
