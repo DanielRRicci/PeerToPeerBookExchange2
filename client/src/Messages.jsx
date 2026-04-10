@@ -37,6 +37,8 @@ export default function Messages() {
   const [loading,       setLoading]       = useState(true);
   const [sending,       setSending]       = useState(false);
   const [pendingChat,   setPendingChat]   = useState(null);
+  const [cooldownUntil, setCooldownUntil] = useState(0);
+  const [errorMessage, setErrorMessage] = useState("");
   // Mobile: "list" shows sidebar, "chat" shows chat panel
   const [mobileView,    setMobileView]    = useState("list");
 
@@ -181,7 +183,10 @@ useEffect(() => {
 
   async function sendMessage() {
     const text = draft.trim();
+    const now = Date.now();
     if (!text || !chatTarget || sending) return;
+    if (now < cooldownUntil) { setErrorMessage("Please wait a moment before sending another message."); return; }
+    if (text.length > 500) { setErrorMessage("Message must be 500 characters or less."); return;}
     setSending(true);
     try {
       const res = await fetch(`${baseUrl}/api/messages`, {
@@ -196,6 +201,7 @@ useEffect(() => {
       });
       if (!res.ok) throw new Error("Send failed");
       setDraft("");
+      setCooldownUntil(Date.now() + 1000);
 
       if (pendingChat) {
         setPendingChat(null);
@@ -812,17 +818,31 @@ function openReportModal() {
                   className="chat-text-input"
                   placeholder="Type a message…"
                   value={draft}
-                  onChange={(e) => setDraft(e.target.value)}
+                  onChange={(e) => { setDraft(e.target.value); if (errorMessage) setErrorMessage(""); }}
                   onKeyDown={handleKeyDown}
                 />
                 <button
                   className="chat-send-btn"
                   onClick={sendMessage}
-                  disabled={sending || !draft.trim()}
+                  disabled={sending || !draft.trim() || Date.now() < cooldownUntil}
                 >
                   Send
                 </button>
               </div>
+                {errorMessage && (
+                  <div
+                    style={{
+                      color: "#ffb3b3",
+                      fontSize: "12px",
+                      marginTop: "6px",
+                      paddingLeft: "20px",
+                      paddingBottom: "8px",
+                      background: "rgba(10,10,10,0.92)"
+                    }}
+                  >
+                    {errorMessage}
+                  </div>
+                )}
             </>
           )}
         </div>
