@@ -38,6 +38,48 @@ function actionLabel(type) {
   return map[type] || type;
 }
 
+// ─── CSV export helper ────────────────────────────────────────────────────────
+function exportToCSV(rows, columns, filename) {
+  const escape = (val) => {
+    if (val == null) return "";
+    const str = String(val).replace(/"/g, '""');
+    return str.includes(",") || str.includes('"') || str.includes("\n") ? `"${str}"` : str;
+  };
+  const header = columns.map((c) => escape(c.label)).join(",");
+  const body   = rows.map((row) => columns.map((c) => escape(c.value(row))).join(",")).join("\n");
+  const blob   = new Blob(["\uFEFF" + header + "\n" + body], { type: "text/csv;charset=utf-8;" });
+  const url    = URL.createObjectURL(blob);
+  const a      = document.createElement("a");
+  a.href       = url;
+  a.download   = filename;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function CSVButton({ onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        display: "inline-flex", alignItems: "center", gap: 5,
+        padding: "5px 14px", borderRadius: 6,
+        border: "1.5px solid rgba(255,189,0,0.35)",
+        background: "rgba(255,189,0,0.1)",
+        color: "#FFBD00",
+        fontFamily: "'DM Sans', sans-serif",
+        fontSize: 11, fontWeight: 700, letterSpacing: "1px",
+        textTransform: "uppercase", cursor: "pointer",
+        transition: "background 0.15s, border-color 0.15s",
+      }}
+      onMouseEnter={(e) => { e.currentTarget.style.background = "rgba(255,189,0,0.2)"; e.currentTarget.style.borderColor = "#FFBD00"; }}
+      onMouseLeave={(e) => { e.currentTarget.style.background = "rgba(255,189,0,0.1)"; e.currentTarget.style.borderColor = "rgba(255,189,0,0.35)"; }}
+      title="Export to CSV (Excel)"
+    >
+      ⬇ CSV Download
+    </button>
+  );
+}
+
 function statusColors(status) {
   switch ((status || "").toLowerCase()) {
     case "active":       return { bg: "#f0fdf4", text: "#15803d", border: "#86efac", dot: "#22c55e" };
@@ -668,7 +710,26 @@ export default function AdminDashboard() {
 
           {/* ── LISTINGS ─────────────────────────────────────────────────── */}
           {activeTab === "Listings" && (
-            <Section title="All Listings" badge={allListings.length}>
+            <Section
+              title="All Listings"
+              badge={allListings.length}
+              action={allListings.length > 0 && (
+                <CSVButton onClick={() => exportToCSV(
+                  allListings,
+                  [
+                    { label: "Listing ID",    value: (l) => l.listing_id   },
+                    { label: "Title",         value: (l) => l.title        },
+                    { label: "Author",        value: (l) => l.author       },
+                    { label: "Price",         value: (l) => `$${Number(l.price).toFixed(2)}` },
+                    { label: "Status",        value: (l) => l.status       },
+                    { label: "Seller Name",   value: (l) => l.seller_name  },
+                    { label: "Seller Email",  value: (l) => l.seller_email },
+                    { label: "Posted",        value: (l) => l.created_at ? new Date(l.created_at).toLocaleString() : "" },
+                  ],
+                  `listings_${listingFilter.replace(/\s+/g, "_").toLowerCase()}_${new Date().toISOString().slice(0,10)}.csv`
+                )} />
+              )}
+            >
               <div className="filter-chips">
                 {["All", "Pending", "Active", "Sold", "Under Review", "Removed"].map((f) => (
                   <div
@@ -783,7 +844,25 @@ export default function AdminDashboard() {
 
           {/* ── USERS ────────────────────────────────────────────────────── */}
           {activeTab === "Users" && (
-            <Section title="All Users" badge={allUsers.length}>
+            <Section
+              title="All Users"
+              badge={allUsers.length}
+              action={allUsers.length > 0 && (
+                <CSVButton onClick={() => exportToCSV(
+                  allUsers,
+                  [
+                    { label: "User ID",       value: (u) => u.user_id      },
+                    { label: "Full Name",     value: (u) => u.full_name    },
+                    { label: "Email",         value: (u) => u.email        },
+                    { label: "Role",          value: (u) => u.role         },
+                    { label: "Listings",      value: (u) => u.listing_count },
+                    { label: "Status",        value: (u) => u.is_suspended ? "Suspended" : "Active" },
+                    { label: "Joined",        value: (u) => u.created_at ? new Date(u.created_at).toLocaleString() : "" },
+                  ],
+                  `users_${new Date().toISOString().slice(0,10)}.csv`
+                )} />
+              )}
+            >
               {loadingUsers ? (
                 <div style={{ textAlign: "center", padding: 24 }}>
                   <div className="spinner" />
@@ -880,7 +959,26 @@ export default function AdminDashboard() {
 
           {/* ── MODERATION LOG ───────────────────────────────────────────── */}
           {activeTab === "Moderation Log" && (
-            <Section title="Moderation Log" badge={modLog.length}>
+            <Section
+              title="Moderation Log"
+              badge={modLog.length}
+              action={modLog.length > 0 && (
+                <CSVButton onClick={() => exportToCSV(
+                  modLog,
+                  [
+                    { label: "Log ID",        value: (e) => e.log_id       },
+                    { label: "Action",        value: (e) => actionLabel(e.action_type).replace(/^[^\w]+/, "").trim() },
+                    { label: "Action Type",   value: (e) => e.action_type  },
+                    { label: "Admin",         value: (e) => e.admin_name   },
+                    { label: "Target Type",   value: (e) => e.target_type  },
+                    { label: "Target ID",     value: (e) => e.target_id    },
+                    { label: "Notes",         value: (e) => e.notes || ""  },
+                    { label: "Timestamp",     value: (e) => e.created_at ? new Date(e.created_at).toLocaleString() : "" },
+                  ],
+                  `moderation_log_${new Date().toISOString().slice(0,10)}.csv`
+                )} />
+              )}
+            >
               {loadingLog ? (
                 <div style={{ textAlign: "center", padding: 24 }}>
                   <div className="spinner" />
