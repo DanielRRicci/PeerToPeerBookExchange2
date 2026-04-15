@@ -320,6 +320,7 @@ function BookListings() {
             : item
         )
       );
+      if (updatedBook?.message) alert(updatedBook.message);
       handleCancelEdit();
     } catch (error) {
       console.error("Save error:", error);
@@ -374,20 +375,23 @@ function BookListings() {
   async function handleAdminStatusSave(listingId, newStatus, notes) {
     try {
       const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/listings/${listingId}/status`, {
+      const res = await fetch(`${baseUrl}/api/admin/listings/${listingId}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
         body: JSON.stringify({ status: newStatus, notes, userId: currentUser?.id }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update status.");
       setBooks((prev) =>
         prev.map((b) =>
           b._type === "book" && b.listing_id === listingId
-            ? { ...b, status: newStatus }
+            ? { ...b, status: data.status || newStatus }
             : b
         )
       );
-    } catch {
-      alert("Could not update status.");
+      if (data.message) alert(data.message);
+    } catch (err) {
+      alert(err.message || "Could not update status.");
     }
   }
 
@@ -395,20 +399,23 @@ function BookListings() {
     const newStatus = (book.status || "Active") === "Sold" ? "Active" : "Sold";
     try {
       const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/listings/${book.listing_id}/status`, {
+      const res = await fetch(`${baseUrl}/api/admin/listings/${book.listing_id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
         body: JSON.stringify({ status: newStatus, userId: currentUser?.id }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update status.");
       setBooks((prev) =>
         prev.map((b) =>
           b._type === "book" && b.listing_id === book.listing_id
-            ? { ...b, status: newStatus }
+            ? { ...b, status: data.status || newStatus }
             : b
         )
       );
-    } catch {
-      alert("Could not update status.");
+      if (data.message) alert(data.message);
+    } catch (err) {
+      alert(err.message || "Could not update status.");
     }
   }
 

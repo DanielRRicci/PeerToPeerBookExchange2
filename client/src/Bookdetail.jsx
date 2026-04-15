@@ -636,6 +636,70 @@ export default function BookDetail() {
           font-size: 10px; color: #bbb; font-weight: 700;
           letter-spacing: 1.5px; text-transform: uppercase;
         }
+        .detail-feedback-card {
+          margin-top: 14px;
+          padding: 14px 16px;
+          border-radius: 12px;
+          background: #fafafa;
+          border: 1.5px solid #f0f0f0;
+        }
+        .detail-feedback-header {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          margin-bottom: 10px;
+        }
+        .detail-feedback-title {
+          font-size: 10px;
+          color: #bbb;
+          font-weight: 700;
+          letter-spacing: 1.5px;
+          text-transform: uppercase;
+        }
+        .detail-feedback-summary {
+          font-size: 12px;
+          color: #666;
+        }
+        .detail-feedback-actions {
+          display: flex;
+          gap: 10px;
+        }
+        .detail-feedback-btn {
+          flex: 1;
+          border: 1.5px solid #e5e7eb;
+          border-radius: 10px;
+          background: #fff;
+          color: #0a0a0a;
+          padding: 10px 12px;
+          font-size: 13px;
+          font-weight: 700;
+          cursor: pointer;
+          transition: background 0.15s, border-color 0.15s, color 0.15s;
+        }
+        .detail-feedback-btn:hover:not(:disabled) {
+          border-color: #FFBD00;
+          background: #fff9e6;
+        }
+        .detail-feedback-btn.active-up {
+          background: #f0fdf4;
+          border-color: #86efac;
+          color: #15803d;
+        }
+        .detail-feedback-btn.active-down {
+          background: #fef2f2;
+          border-color: #fca5a5;
+          color: #b91c1c;
+        }
+        .detail-feedback-btn:disabled {
+          opacity: 0.7;
+          cursor: not-allowed;
+        }
+        .detail-feedback-help {
+          font-size: 11px;
+          color: #999;
+          margin-top: 10px;
+        }
         .detail-btn-row { display: flex; gap: 10px; margin-top: 22px; }
         .detail-btn-contact {
           flex: 1; padding: 14px; background: #0a0a0a; color: #FFBD00;
@@ -1020,18 +1084,58 @@ export default function BookDetail() {
                 )}
 
                 {seller && (
-                  <div className="detail-seller-card">
-                    <img
-                      src={seller.profile_image_url ||
-                        `https://ui-avatars.com/api/?name=${encodeURIComponent(seller.full_name)}&background=FFBD00&color=000&size=88`}
-                      alt={seller.full_name}
-                      className="detail-seller-avatar"
-                    />
-                    <div>
-                      <div className="detail-seller-label">Seller</div>
-                      <div className="detail-seller-name">{seller.full_name}</div>
+                  <>
+                    <div className="detail-seller-card">
+                      <img
+                        src={seller.profile_image_url ||
+                          `https://ui-avatars.com/api/?name=${encodeURIComponent(seller.full_name)}&background=FFBD00&color=000&size=88`}
+                        alt={seller.full_name}
+                        className="detail-seller-avatar"
+                      />
+                      <div>
+                        <div className="detail-seller-label">Seller</div>
+                        <div className="detail-seller-name">{seller.full_name}</div>
+                      </div>
                     </div>
-                  </div>
+
+                    <div className="detail-feedback-card">
+                      <div className="detail-feedback-header">
+                        <div className="detail-feedback-title">Seller Feedback</div>
+                        <div className="detail-feedback-summary">
+                          {feedbackLoading
+                            ? "Loading..."
+                            : `${feedback.thumbs_up} thumbs up · ${feedback.thumbs_down} thumbs down`}
+                        </div>
+                      </div>
+
+                      <div className="detail-feedback-actions">
+                        <button
+                          className={`detail-feedback-btn${feedback.currentVote === "up" ? " active-up" : ""}`}
+                          onClick={() => handleFeedbackVote("up")}
+                          disabled={!currentUser || isOwn || feedbackSaving || feedbackLoading}
+                        >
+                          👍 Helpful ({feedback.thumbs_up})
+                        </button>
+                        <button
+                          className={`detail-feedback-btn${feedback.currentVote === "down" ? " active-down" : ""}`}
+                          onClick={() => handleFeedbackVote("down")}
+                          disabled={!currentUser || isOwn || feedbackSaving || feedbackLoading}
+                        >
+                          👎 Not Great ({feedback.thumbs_down})
+                        </button>
+                      </div>
+
+                      <div className="detail-feedback-help">
+                        {!currentUser
+                          ? "Log in to leave feedback."
+                          : isOwn
+                          ? "You cannot react to your own listing."
+                          : feedback.currentVote
+                          ? `Your current reaction: ${feedback.currentVote === "up" ? "thumbs up" : "thumbs down"}.`
+                          : "You can leave one reaction per listing and change it later."}
+                      </div>
+                    </div>
+                  </>
                 )}
 
                 {(() => {

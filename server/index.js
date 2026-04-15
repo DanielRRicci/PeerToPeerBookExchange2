@@ -170,6 +170,23 @@ async function ensureSchema() {
     )
   `);
 
+  await runQuery(`
+    CREATE TABLE IF NOT EXISTS ListingFeedback (
+      feedback_id INT AUTO_INCREMENT PRIMARY KEY,
+      listing_id INT NOT NULL,
+      seller_id INT NOT NULL,
+      rater_id INT NOT NULL,
+      vote ENUM('up', 'down') NOT NULL,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY uq_listing_feedback_vote (listing_id, rater_id),
+      INDEX idx_listing_feedback_seller (seller_id),
+      FOREIGN KEY (listing_id) REFERENCES BookListings(listing_id) ON DELETE CASCADE,
+      FOREIGN KEY (seller_id) REFERENCES Users(user_id) ON DELETE CASCADE,
+      FOREIGN KEY (rater_id) REFERENCES Users(user_id) ON DELETE CASCADE
+    )
+  `);
+
   const addColumnStatements = [
     'ALTER TABLE Users ADD COLUMN is_verified BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE Users ADD COLUMN verification_code_hash VARCHAR(255)',
@@ -379,10 +396,11 @@ app.get("/BookListings", async (req, res, next) => {
 });
 
 // PUT /BookListings/:id
-app.put("/BookListings/:id", async (req, res, next) => {
+app.put("/BookListings/:id", requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
     const { title, author, edition, isbn, course_code, book_condition, price, notes, status } = req.body;
+    const currentUser = req.currentUser;
 
     if (!title || !author || !book_condition || price == null) {
       return res.status(400).json({ error: "title, author, price, and book_condition are required." });
@@ -401,8 +419,31 @@ app.put("/BookListings/:id", async (req, res, next) => {
       return res.status(400).json({ error: "Price must be a valid non-negative number." });
     }
 
+    const [existingListing] = await runQuery(
+      'SELECT listing_id, user_id, status FROM BookListings WHERE listing_id = ? LIMIT 1',
+      [id]
+    );
+    if (!existingListing) {
+      return res.status(404).json({ error: "Listing not found." });
+    }
+
+    const isAdmin = currentUser.role === "admin";
+    const isOwner = existingListing.user_id === currentUser.user_id;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: "You can only edit your own listings." });
+    }
+
     const allowedStatuses = ["Pending", "Active", "Sold", "Removed", "Under Review"];
-    const cleanedStatus = allowedStatuses.includes(status) ? status : "Active";
+    let cleanedStatus = allowedStatuses.includes(status) ? status : (existingListing.status || "Active");
+
+    if (!isAdmin) {
+      if (!["Active", "Sold"].includes(cleanedStatus)) {
+        return res.status(403).json({ error: "You can only use Active or Sold for your own listing." });
+      }
+      if (existingListing.status === "Sold" && cleanedStatus === "Active") {
+        cleanedStatus = "Pending";
+      }
+    }
 
     await runQuery(
       `UPDATE BookListings
@@ -423,7 +464,12 @@ app.put("/BookListings/:id", async (req, res, next) => {
       [id]
     );
 
-    res.json(updated[0]);
+    res.json({
+      ...updated[0],
+      message: !isAdmin && existingListing.status === "Sold" && cleanedStatus === "Pending"
+        ? "Relisted listings return to pending review before becoming active again."
+        : undefined,
+    });
   } catch (err) {
     next(err);
   }
@@ -897,10 +943,107 @@ app.get('/api/listings', async (req, res, next) => {
   }
 });
 
-app.put('/api/listings/:id', async (req, res, next) => {
+app.get('/api/listings/:id/feedback', async (req, res, next) => {
+  try {
+    const listingId = Number(req.params.id);
+    const viewerId = Number(req.query.viewerId);
+
+    if (!Number.isInteger(listingId) || listingId <= 0) {
+      return res.status(400).json({ error: 'Invalid listing id.' });
+    }
+
+    const [listing] = await runQuery(
+      'SELECT listing_id, user_id FROM BookListings WHERE listing_id = ? LIMIT 1',
+      [listingId]
+    );
+    if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+
+    const [summary] = await runQuery(
+      `SELECT
+         COALESCE(SUM(vote = 'up'), 0) AS thumbs_up,
+         COALESCE(SUM(vote = 'down'), 0) AS thumbs_down
+       FROM ListingFeedback
+       WHERE listing_id = ?`,
+      [listingId]
+    );
+
+    let currentVote = null;
+    if (Number.isInteger(viewerId) && viewerId > 0) {
+      const [existingVote] = await runQuery(
+        'SELECT vote FROM ListingFeedback WHERE listing_id = ? AND rater_id = ? LIMIT 1',
+        [listingId, viewerId]
+      );
+      currentVote = existingVote?.vote || null;
+    }
+
+    res.json({
+      listing_id: listingId,
+      seller_id: listing.user_id,
+      thumbs_up: Number(summary?.thumbs_up || 0),
+      thumbs_down: Number(summary?.thumbs_down || 0),
+      currentVote,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post('/api/listings/:id/feedback', requireAuth, async (req, res, next) => {
+  try {
+    const listingId = Number(req.params.id);
+    const raterId = Number(req.currentUser?.user_id);
+    const vote = String(req.body?.vote || '').trim().toLowerCase();
+
+    if (!Number.isInteger(listingId) || listingId <= 0) {
+      return res.status(400).json({ error: 'Invalid listing id.' });
+    }
+
+    if (!['up', 'down'].includes(vote)) {
+      return res.status(400).json({ error: 'Vote must be either up or down.' });
+    }
+
+    const [listing] = await runQuery(
+      'SELECT listing_id, user_id FROM BookListings WHERE listing_id = ? LIMIT 1',
+      [listingId]
+    );
+    if (!listing) return res.status(404).json({ error: 'Listing not found.' });
+    if (listing.user_id === raterId) {
+      return res.status(400).json({ error: 'You cannot react to your own listing.' });
+    }
+
+    await runQuery(
+      `INSERT INTO ListingFeedback (listing_id, seller_id, rater_id, vote)
+       VALUES (?, ?, ?, ?)
+       ON DUPLICATE KEY UPDATE vote = VALUES(vote), seller_id = VALUES(seller_id)`,
+      [listingId, listing.user_id, raterId, vote]
+    );
+
+    const [summary] = await runQuery(
+      `SELECT
+         COALESCE(SUM(vote = 'up'), 0) AS thumbs_up,
+         COALESCE(SUM(vote = 'down'), 0) AS thumbs_down
+       FROM ListingFeedback
+       WHERE listing_id = ?`,
+      [listingId]
+    );
+
+    res.json({
+      listing_id: listingId,
+      seller_id: listing.user_id,
+      thumbs_up: Number(summary?.thumbs_up || 0),
+      thumbs_down: Number(summary?.thumbs_down || 0),
+      currentVote: vote,
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.put('/api/listings/:id', requireAuth, async (req, res, next) => {
   try {
     const { id } = req.params;
     const { title, author, edition, isbn, course_code, book_condition, price, notes, status } = req.body;
+    const currentUser = req.currentUser;
 
     if (!title || !author || !book_condition || price == null) {
       return res.status(400).json({ error: 'title, author, price, and book_condition are required.' });
@@ -919,11 +1062,27 @@ app.put('/api/listings/:id', async (req, res, next) => {
       return res.status(400).json({ error: 'Price must be a valid non-negative number.' });
     }
 
-    const existing = await runQuery('SELECT listing_id, status FROM BookListings WHERE listing_id = ? LIMIT 1', [id]);
+    const existing = await runQuery('SELECT listing_id, user_id, status FROM BookListings WHERE listing_id = ? LIMIT 1', [id]);
     if (existing.length === 0) return res.status(404).json({ error: 'Listing not found.' });
 
+    const listing = existing[0];
+    const isAdmin = currentUser.role === 'admin';
+    const isOwner = listing.user_id === currentUser.user_id;
+    if (!isAdmin && !isOwner) {
+      return res.status(403).json({ error: 'You can only edit your own listings.' });
+    }
+
     const allowedStatuses = ["Pending", "Active", "Sold", "Removed", "Under Review"];
-    const cleanedStatus = allowedStatuses.includes(status) ? status : (existing[0].status || 'Active');
+    let cleanedStatus = allowedStatuses.includes(status) ? status : (listing.status || 'Active');
+
+    if (!isAdmin) {
+      if (!['Active', 'Sold'].includes(cleanedStatus)) {
+        return res.status(403).json({ error: 'You can only use Active or Sold for your own listing.' });
+      }
+      if (listing.status === 'Sold' && cleanedStatus === 'Active') {
+        cleanedStatus = 'Pending';
+      }
+    }
 
     await runQuery(
       `UPDATE BookListings SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
@@ -939,7 +1098,12 @@ app.put('/api/listings/:id', async (req, res, next) => {
       [id]
     );
 
-    res.json(updated[0]);
+    res.json({
+      ...updated[0],
+      message: !isAdmin && listing.status === 'Sold' && cleanedStatus === 'Pending'
+        ? 'Relisted listings return to pending review before becoming active again.'
+        : undefined,
+    });
   } catch (err) {
     next(err);
   }

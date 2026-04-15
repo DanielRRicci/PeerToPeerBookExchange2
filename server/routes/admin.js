@@ -25,7 +25,7 @@ async function logAction(db, { adminId, actionType, targetType, targetId, notes 
  * PATCH /api/admin/listings/:id/status
  * Body: { status: 'Active'|'Pending'|'Sold'|'Removed'|'Under Review', userId, notes? }
  *
- * Sellers can toggle their OWN listing between Active ↔ Sold.
+ * Sellers can mark Active -> Sold and relist Sold -> Pending.
  * Admins can set any status on any listing.
  */
 router.patch('/listings/:id/status', requireAuth, async (req, res) => {
@@ -51,28 +51,45 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
     const isOwner = listing.user_id === user.user_id;
     const isAdmin = user.role === 'admin';
 
-    // Non-admins can only touch their own listing and only between Active/Sold
+    let nextStatus = status;
+
+    // Non-admins can only touch their own listing with limited transitions.
     if (!isAdmin) {
       if (!isOwner) return res.status(403).json({ error: 'Not your listing.' });
-      if (!['Active', 'Sold'].includes(status)) {
-        return res.status(403).json({ error: 'You can only toggle between Active and Sold.' });
+
+      const currentStatus = String(listing.status || '');
+      const allowedOwnerTransition =
+        (currentStatus === 'Active' && status === 'Sold') ||
+        (currentStatus === 'Sold' && status === 'Active');
+
+      if (!allowedOwnerTransition) {
+        return res.status(403).json({ error: 'You can only mark an active listing as sold or relist a sold listing for review.' });
+      }
+
+      if (currentStatus === 'Sold' && status === 'Active') {
+        nextStatus = 'Pending';
       }
     }
 
-    await db.query('UPDATE BookListings SET status = ? WHERE listing_id = ?', [status, listingId]);
+    await db.query('UPDATE BookListings SET status = ? WHERE listing_id = ?', [nextStatus, listingId]);
 
-    // Log if admin action
     if (isAdmin) {
       await logAction(db, {
         adminId:    user.user_id,
-        actionType: `set_listing_status_${status.toLowerCase().replace(' ', '_')}`,
+        actionType: `set_listing_status_${nextStatus.toLowerCase().replace(' ', '_')}`,
         targetType: 'listing',
         targetId:   listingId,
         notes,
       });
     }
 
-    res.json({ listing_id: listingId, status });
+    res.json({
+      listing_id: listingId,
+      status: nextStatus,
+      message: !isAdmin && nextStatus === 'Pending'
+        ? 'Relisted listings return to pending review before becoming active again.'
+        : undefined,
+    });
   } catch (err) {
     console.error('[PATCH listing status]', err);
     res.status(500).json({ error: 'Failed to update listing status.' });

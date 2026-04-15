@@ -751,7 +751,7 @@ function Profile() {
                   <button
                     className={`btn-sold-toggle${book.status === "Sold" ? " is-sold" : ""}`}
                     onClick={() => handleStatusToggle(book)}
-                    title={book.status === "Sold" ? "Mark as Active" : "Mark as Sold"}
+                    title={book.status === "Sold" ? "Relist for review" : "Mark as Sold"}
                   >
                     {book.status === "Sold" ? "↩ Relist" : "Mark Sold"}
                   </button>
