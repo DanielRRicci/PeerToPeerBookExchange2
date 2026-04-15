@@ -5,15 +5,21 @@ import { getApiBaseUrl } from "./apiBaseUrl";
 // ─── helpers ──────────────────────────────────────────────────────────────────
 function fileTypeLabel(mimeType) {
   if (!mimeType) return "File";
-  if (mimeType === "application/pdf") return "PDF";
-  if (mimeType.startsWith("image/")) return "Image";
-  if (mimeType.startsWith("audio/")) return "Audio";
-  if (mimeType.startsWith("video/")) return "Video";
-  if (mimeType === "text/csv" || mimeType === "application/vnd.ms-excel") return "CSV";
-  if (
-    mimeType === "application/vnd.ms-powerpoint" ||
-    mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
-  ) return "PowerPoint";
+  const mime = mimeType.toLowerCase();
+  if (mime.includes("pdf")) return "PDF";
+  if (mime.includes("jpeg") || mime.includes("jpg")) return "JPEG";
+  if (mime.includes("png")) return "PNG";
+  if (mime.includes("webp")) return "WebP";
+  if (mime.includes("mp3") || mime.includes("mpeg")) return "MP3";
+  if (mime.includes("wav")) return "WAV";
+  if (mime.includes("csv")) return "CSV";
+  if (mime.includes("excel") || mime.includes("spreadsheetml")) return "XLS";
+  if (mime.includes("mp4")) return "MP4";
+  if (mime.includes("quicktime") || mime.includes("mov")) return "MOV";
+  if (mime.includes("powerpoint") || mime.includes("presentationml")) return "PPT";
+  if (mime.startsWith("image/")) return "Image";
+  if (mime.startsWith("audio/")) return "Audio";
+  if (mime.startsWith("video/")) return "Video";
   return "File";
 }
 
@@ -105,6 +111,7 @@ function BookListings() {
   const [category,      setCategory]      = useState("All");
   const [sortOrder,     setSortOrder]     = useState("");
   const [typeFilter,    setTypeFilter]    = useState("All");
+  const [noteFormatFilter, setNoteFormatFilter] = useState("All");
   const [statusFilter,  setStatusFilter]  = useState(isAdmin ? "All" : "Active");
 
   const [editingId,     setEditingId]     = useState(null);
@@ -181,11 +188,18 @@ function BookListings() {
       (typeFilter === "Books" && book._type === "book") ||
       (typeFilter === "Notes" && book._type === "notes");
 
-    return matchesSearch && matchesCategory && matchesType;
+    let matchesNoteFormat = true;
+    if (noteFormatFilter !== "All") {
+      matchesNoteFormat = book._type === "notes" && fileTypeLabel(book.file_type) === noteFormatFilter;
+    }
+
+    return matchesSearch && matchesCategory && matchesType && matchesNoteFormat;
   });
 
   if (sortOrder === "lowToHigh")   processedBooks.sort((a, b) => a.price - b.price);
   else if (sortOrder === "highToLow") processedBooks.sort((a, b) => b.price - a.price);
+  else if (sortOrder === "newest") processedBooks.sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0));
+  else if (sortOrder === "oldest") processedBooks.sort((a, b) => new Date(a.created_at || 0) - new Date(b.created_at || 0));
   else if (sortOrder === "mostLiked") processedBooks.sort((a, b) => Number(b.like_count || 0) - Number(a.like_count || 0));
 
   // ── actions ──────────────────────────────────────────────────────────────
@@ -515,7 +529,16 @@ function BookListings() {
           .listings-container { flex-direction: column; padding: 1rem; gap: 1rem; }
           .listings-sidebar { flex: none; width: 100%; }
           .listings-grid { grid-template-columns: 1fr; }
+          .sidebar-body { padding: 14px; }
+          .radio-group { gap: 4px; }
+          .radio-chip { font-size: 11px; padding: 4px 9px; }
+          .book-card-img, .book-card-img-notes { height: 140px; }
+          .card-btn-group { flex-wrap: wrap; }
+          .btn-primary, .btn-secondary, .btn-danger, .btn-approve, .btn-admin, .btn-sold-toggle { font-size: 0.7rem; padding: 6px 10px; }
           .modal-grid { grid-template-columns: 1fr; }
+          .modal-card { max-width: 100%; margin: 0; border-radius: 14px; }
+          .admin-banner { padding: 8px 1rem; }
+          .admin-banner-text { font-size: 11px; }
         }
       `}</style>
 
@@ -568,6 +591,28 @@ function BookListings() {
 
               <div className="filter-divider" />
 
+              {typeFilter === "Notes" && (
+                <>
+                  <label className="filter-label" style={{ marginTop: "-8px" }}>File Format</label>
+                  <select className="filter-input" value={noteFormatFilter} onChange={(e) => setNoteFormatFilter(e.target.value)}>
+                    <option value="All">All Formats</option>
+                    <option value="PDF">PDF</option>
+                    <option value="JPEG">JPEG</option>
+                    <option value="PNG">PNG</option>
+                    <option value="WebP">WebP</option>
+                    <option value="MP3">MP3</option>
+                    <option value="WAV">WAV</option>
+                    <option value="CSV">CSV</option>
+                    <option value="XLS">XLS</option>
+                    <option value="PPT">PowerPoint</option>
+                    <option value="MP4">MP4 Video</option>
+                    <option value="MOV">MOV Video</option>
+                  </select>
+                </>
+              )}
+
+              <div className="filter-divider" />
+
               <label className="filter-label">Status</label>
               <div className="radio-group">
                 {(isAdmin
@@ -596,6 +641,8 @@ function BookListings() {
               <label className="filter-label">Sort by</label>
               <select className="filter-input" value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
                 <option value="">Relevance (Default)</option>
+                <option value="newest">Date: Newest First</option>
+                <option value="oldest">Date: Oldest First</option>
                 <option value="lowToHigh">Price: Low to High</option>
                 <option value="highToLow">Price: High to Low</option>
                 <option value="mostLiked">Most Liked Notes</option>
@@ -640,7 +687,14 @@ function BookListings() {
                       </div>
 
                       <div className="book-title">{book.title}</div>
-                      <div className="book-author">{isNotes ? (book.course_code || "") : book.author}</div>
+                      <div className="book-author">
+                        {isNotes ? (book.course_code || "") : book.author}
+                        {book.created_at && (
+                          <span style={{ display: 'block', fontSize: '0.75rem', color: '#999', marginTop: '2px' }}>
+                            Posted: {new Date(book.created_at).toLocaleDateString()}
+                          </span>
+                        )}
+                      </div>
                       {isNotes && book.description && (
                         <div className="book-description">{book.description}</div>
                       )}
