@@ -313,9 +313,35 @@ export default function AdminDashboard() {
   }, []);
 
   useEffect(() => { loadStats(); loadModLog(); }, []);
-  useEffect(() => { if (activeTab === "Listings")       loadListings(); }, [activeTab, listingFilter]);
+  useEffect(() => {
+    if (activeTab === "Listings") {
+      loadStats();
+      loadListings();
+    }
+  }, [activeTab, listingFilter, loadListings, loadStats]);
   useEffect(() => { if (activeTab === "Users")          loadUsers();    }, [activeTab]);
   useEffect(() => { if (activeTab === "Moderation Log") loadModLog();   }, [activeTab]);
+
+  useEffect(() => {
+    async function refreshVisibleData() {
+      if (document.hidden) return;
+      await loadStats();
+      if (activeTab === "Listings") await loadListings();
+      if (activeTab === "Users") await loadUsers();
+      if (activeTab === "Moderation Log") await loadModLog();
+    }
+
+    const handleVisibility = () => { refreshVisibleData(); };
+    const handleFocus = () => { refreshVisibleData(); };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
+    return () => {
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
+    };
+  }, [activeTab, loadListings, loadModLog, loadStats, loadUsers]);
 
   async function approveListing(id) {
     await fetch(`${baseUrl}/api/admin/listings/${id}/approve`, {

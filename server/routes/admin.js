@@ -8,6 +8,22 @@ const express = require('express');
 const router  = express.Router();
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
+function normalizeStatus(status) {
+  const key = String(status || '').trim().toLowerCase();
+  const map = {
+    pending: 'Pending',
+    active: 'Active',
+    sold: 'Sold',
+    removed: 'Removed',
+    'under review': 'Under Review',
+  };
+  return map[key] || null;
+}
+
+function getReviewFlagForStatus(status) {
+  return normalizeStatus(status) !== 'Active';
+}
+
 // ─── helper: write a moderation log entry ────────────────────────────────────
 async function logAction(db, { adminId, actionType, targetType, targetId, notes = null }) {
   await db.query(
@@ -25,7 +41,7 @@ async function logAction(db, { adminId, actionType, targetType, targetId, notes 
  * PATCH /api/admin/listings/:id/status
  * Body: { status: 'Active'|'Pending'|'Sold'|'Removed'|'Under Review', userId, notes? }
  *
- * Sellers can toggle their OWN listing between Active ↔ Sold.
+ * Sellers can mark Active -> Sold and relist Sold -> Pending.
  * Admins can set any status on any listing.
  */
 router.patch('/listings/:id/status', requireAuth, async (req, res) => {
@@ -35,7 +51,8 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
   const user = req.currentUser;
 
   const VALID_STATUSES = ['Pending', 'Active', 'Sold', 'Removed', 'Under Review'];
-  if (!VALID_STATUSES.includes(status)) {
+  const requestedStatus = normalizeStatus(status);
+  if (!requestedStatus) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 
@@ -50,29 +67,54 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
     const listing = rows[0];
     const isOwner = listing.user_id === user.user_id;
     const isAdmin = user.role === 'admin';
+    const currentStatus = normalizeStatus(listing.status) || String(listing.status || '').trim();
 
-    // Non-admins can only touch their own listing and only between Active/Sold
-    if (!isAdmin) {
-      if (!isOwner) return res.status(403).json({ error: 'Not your listing.' });
-      if (!['Active', 'Sold'].includes(status)) {
-        return res.status(403).json({ error: 'You can only toggle between Active and Sold.' });
+    let nextStatus = requestedStatus;
+    let requiresAdminReview = getReviewFlagForStatus(requestedStatus);
+    const isOwnerSoldToggle =
+      isOwner &&
+      ((currentStatus === 'Active' && requestedStatus === 'Sold') ||
+       (currentStatus === 'Sold' && requestedStatus === 'Active'));
+
+    // Owners must always use the seller moderation flow for sold/relist actions,
+    // even if that owner also has admin access.
+    if (isOwnerSoldToggle) {
+      if (currentStatus === 'Sold' && requestedStatus === 'Active') {
+        nextStatus = 'Pending';
+        requiresAdminReview = true;
       }
+
+      if (currentStatus === 'Active' && requestedStatus === 'Sold') {
+        nextStatus = 'Sold';
+        requiresAdminReview = true;
+      }
+    } else if (!isAdmin) {
+      if (!isOwner) return res.status(403).json({ error: 'Not your listing.' });
+      return res.status(403).json({ error: 'You can only mark an active listing as sold or relist a sold listing for review.' });
     }
 
-    await db.query('UPDATE BookListings SET status = ? WHERE listing_id = ?', [status, listingId]);
+    await db.query(
+      'UPDATE BookListings SET status = ?, requires_admin_review = ? WHERE listing_id = ?',
+      [nextStatus, requiresAdminReview, listingId]
+    );
 
-    // Log if admin action
     if (isAdmin) {
       await logAction(db, {
         adminId:    user.user_id,
-        actionType: `set_listing_status_${status.toLowerCase().replace(' ', '_')}`,
+        actionType: `set_listing_status_${nextStatus.toLowerCase().replace(' ', '_')}`,
         targetType: 'listing',
         targetId:   listingId,
         notes,
       });
     }
 
-    res.json({ listing_id: listingId, status });
+    res.json({
+      listing_id: listingId,
+      status: nextStatus,
+      message: !isAdmin && nextStatus === 'Pending'
+        ? 'Relisted listings return to pending review before becoming active again.'
+        : undefined,
+    });
   } catch (err) {
     console.error('[PATCH listing status]', err);
     res.status(500).json({ error: 'Failed to update listing status.' });
@@ -91,6 +133,7 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
 router.get('/listings', requireAuth, requireAdmin, async (req, res) => {
   const db = req.app.get('db');
   const { status } = req.query;
+  const normalizedFilter = normalizeStatus(status);
 
   try {
     let sql    = `SELECT bl.*, u.full_name AS seller_name, u.email AS seller_email
@@ -98,9 +141,9 @@ router.get('/listings', requireAuth, requireAdmin, async (req, res) => {
                   JOIN Users u ON u.user_id = bl.user_id`;
     const args = [];
 
-    if (status) {
-      sql += ' WHERE bl.status = ?';
-      args.push(status);
+    if (normalizedFilter) {
+      sql += ' WHERE LOWER(COALESCE(bl.status, \'\')) = LOWER(?)';
+      args.push(normalizedFilter);
     }
 
     sql += ' ORDER BY bl.created_at DESC';
@@ -126,7 +169,7 @@ router.post('/listings/:id/approve', requireAuth, requireAdmin, async (req, res)
     const [rows] = await db.query('SELECT listing_id FROM BookListings WHERE listing_id = ?', [listingId]);
     if (!rows.length) return res.status(404).json({ error: 'Listing not found.' });
 
-    await db.query("UPDATE BookListings SET status = 'Active' WHERE listing_id = ?", [listingId]);
+    await db.query("UPDATE BookListings SET status = 'Active', requires_admin_review = FALSE WHERE listing_id = ?", [listingId]);
 
     await logAction(db, {
       adminId:    user.user_id,
@@ -338,11 +381,11 @@ router.get('/stats', requireAuth, requireAdmin, async (req, res) => {
     const [[listingStats]] = await db.query(`
       SELECT
         COUNT(*) AS total_listings,
-        SUM(status = 'Pending')      AS pending,
-        SUM(status = 'Active')       AS active,
-        SUM(status = 'Sold')         AS sold,
-        SUM(status = 'Removed')      AS removed,
-        SUM(status = 'Under Review') AS under_review
+        SUM(LOWER(COALESCE(status, '')) = 'pending')      AS pending,
+        SUM(LOWER(COALESCE(status, '')) = 'active')       AS active,
+        SUM(LOWER(COALESCE(status, '')) = 'sold')         AS sold,
+        SUM(LOWER(COALESCE(status, '')) = 'removed')      AS removed,
+        SUM(LOWER(COALESCE(status, '')) = 'under review') AS under_review
       FROM BookListings
     `);
 

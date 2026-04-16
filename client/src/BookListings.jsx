@@ -243,7 +243,15 @@ function BookListings() {
       if (!res.ok) throw new Error("Failed to update listing");
       let updatedBook;
       try { updatedBook = await res.json(); } catch { updatedBook = payload; }
-      setBooks((prev) => prev.map((item) => item._type === "book" && item.listing_id === editData.listing_id ? { ...item, ...updatedBook, _type: "book" } : item));
+
+      setBooks((prev) =>
+        prev.map((item) =>
+          item._type === "book" && item.listing_id === editData.listing_id
+            ? { ...item, ...updatedBook, _type: "book" }
+            : item
+        )
+      );
+      if (updatedBook?.message) alert(updatedBook.message);
       handleCancelEdit();
     } catch (error) {
       console.error("Save error:", error);
@@ -283,65 +291,47 @@ function BookListings() {
   async function handleAdminStatusSave(listingId, newStatus, notes) {
     try {
       const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/listings/${listingId}/status`, {
-        method: "PATCH", headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
+      const res = await fetch(`${baseUrl}/api/admin/listings/${listingId}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
         body: JSON.stringify({ status: newStatus, notes, userId: currentUser?.id }),
       });
-      setBooks((prev) => prev.map((b) => b._type === "book" && b.listing_id === listingId ? { ...b, status: newStatus } : b));
-    } catch { alert("Could not update status."); }
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update status.");
+      setBooks((prev) =>
+        prev.map((b) =>
+          b._type === "book" && b.listing_id === listingId
+            ? { ...b, status: data.status || newStatus }
+            : b
+        )
+      );
+      if (data.message) alert(data.message);
+    } catch (err) {
+      alert(err.message || "Could not update status.");
+    }
   }
 
   async function handleSellerStatusToggle(book) {
     const newStatus = (book.status || "Active") === "Sold" ? "Active" : "Sold";
     try {
       const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/listings/${book.listing_id}/status`, {
-        method: "PATCH", headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
+      const res = await fetch(`${baseUrl}/api/admin/listings/${book.listing_id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
         body: JSON.stringify({ status: newStatus, userId: currentUser?.id }),
       });
-      setBooks((prev) => prev.map((b) => b._type === "book" && b.listing_id === book.listing_id ? { ...b, status: newStatus } : b));
-    } catch { alert("Could not update status."); }
-  }
-
-  async function handleLike(note) {
-    if (!currentUser?.id) return;
-    const noteId = note.note_id;
-    if (likingIds.has(noteId)) return; // debounce
-
-    setLikingIds((prev) => new Set([...prev, noteId]));
-    const isLiked = likedNoteIds.has(noteId);
-
-    // Optimistic update
-    setLikedNoteIds((prev) => {
-      const next = new Set(prev);
-      if (isLiked) next.delete(noteId); else next.add(noteId);
-      return next;
-    });
-    setBooks((prev) => prev.map((b) =>
-      b._type === "notes" && b.note_id === noteId
-        ? { ...b, like_count: Math.max(0, Number(b.like_count || 0) + (isLiked ? -1 : 1)) }
-        : b
-    ));
-
-    try {
-      const baseUrl = getApiBaseUrl();
-      const res = await fetch(`${baseUrl}/api/notes/${noteId}/like`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId: currentUser.id }),
-      });
       const data = await res.json();
-      // Sync with server's authoritative count
-      setBooks((prev) => prev.map((b) => b._type === "notes" && b.note_id === noteId ? { ...b, like_count: data.like_count } : b));
-    } catch {
-      // Revert on error
-      setLikedNoteIds((prev) => { const next = new Set(prev); if (isLiked) next.add(noteId); else next.delete(noteId); return next; });
-      setBooks((prev) => prev.map((b) =>
-        b._type === "notes" && b.note_id === noteId
-          ? { ...b, like_count: Math.max(0, Number(b.like_count || 0) + (isLiked ? 1 : -1)) }
-          : b
-      ));
-    } finally {
-      setLikingIds((prev) => { const next = new Set(prev); next.delete(noteId); return next; });
+      if (!res.ok) throw new Error(data.error || "Could not update status.");
+      setBooks((prev) =>
+        prev.map((b) =>
+          b._type === "book" && b.listing_id === book.listing_id
+            ? { ...b, status: data.status || newStatus }
+            : b
+        )
+      );
+      if (data.message) alert(data.message);
+    } catch (err) {
+      alert(err.message || "Could not update status.");
     }
   }
 

@@ -291,16 +291,21 @@ function Profile() {
     const newStatus = book.status === "Sold" ? "Active" : "Sold";
     try {
       const baseUrl = getApiBaseUrl();
-      await fetch(`${baseUrl}/api/admin/listings/${book.listing_id}/status`, {
+      const res = await fetch(`${baseUrl}/api/admin/listings/${book.listing_id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "x-user-id": currentUser?.id },
         body: JSON.stringify({ status: newStatus, userId: currentUser?.id }),
       });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update status.");
       setListings((prev) =>
-        prev.map((b) => (b.listing_id === book.listing_id ? { ...b, status: newStatus } : b))
+        prev.map((b) =>
+          b.listing_id === book.listing_id ? { ...b, status: data.status || newStatus } : b
+        )
       );
-    } catch {
-      alert("Could not update status.");
+      if (data.message) alert(data.message);
+    } catch (err) {
+      alert(err.message || "Could not update status.");
     }
   }
 
@@ -751,7 +756,7 @@ function Profile() {
                   <button
                     className={`btn-sold-toggle${book.status === "Sold" ? " is-sold" : ""}`}
                     onClick={() => handleStatusToggle(book)}
-                    title={book.status === "Sold" ? "Mark as Active" : "Mark as Sold"}
+                    title={book.status === "Sold" ? "Relist for review" : "Mark as Sold"}
                   >
                     {book.status === "Sold" ? "↩ Relist" : "Mark Sold"}
                   </button>
