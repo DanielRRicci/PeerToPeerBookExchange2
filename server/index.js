@@ -5,6 +5,7 @@ const cors = require("cors");
 const pool = require("./db");
 const crypto = require("crypto");
 const nodemailer = require("nodemailer");
+const { requireAuth } = require("./middleware/auth");
 
 const BOOT_MARKER = new Date().toISOString();
 const VERIFICATION_CODE_TTL_MINUTES = 15;
