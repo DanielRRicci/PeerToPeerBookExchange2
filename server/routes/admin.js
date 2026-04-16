@@ -20,6 +20,10 @@ function normalizeStatus(status) {
   return map[key] || null;
 }
 
+function getReviewFlagForStatus(status) {
+  return normalizeStatus(status) !== 'Active';
+}
+
 // ─── helper: write a moderation log entry ────────────────────────────────────
 async function logAction(db, { adminId, actionType, targetType, targetId, notes = null }) {
   await db.query(
@@ -63,14 +67,15 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
     const listing = rows[0];
     const isOwner = listing.user_id === user.user_id;
     const isAdmin = user.role === 'admin';
+    const currentStatus = normalizeStatus(listing.status) || String(listing.status || '').trim();
 
     let nextStatus = requestedStatus;
+    let requiresAdminReview = getReviewFlagForStatus(requestedStatus);
 
     // Non-admins can only touch their own listing with limited transitions.
     if (!isAdmin) {
       if (!isOwner) return res.status(403).json({ error: 'Not your listing.' });
 
-      const currentStatus = normalizeStatus(listing.status) || String(listing.status || '').trim();
       const allowedOwnerTransition =
         (currentStatus === 'Active' && requestedStatus === 'Sold') ||
         (currentStatus === 'Sold' && requestedStatus === 'Active');
@@ -81,10 +86,19 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
 
       if (currentStatus === 'Sold' && requestedStatus === 'Active') {
         nextStatus = 'Pending';
+        requiresAdminReview = true;
+      }
+
+      if (currentStatus === 'Active' && requestedStatus === 'Sold') {
+        nextStatus = 'Sold';
+        requiresAdminReview = true;
       }
     }
 
-    await db.query('UPDATE BookListings SET status = ? WHERE listing_id = ?', [nextStatus, listingId]);
+    await db.query(
+      'UPDATE BookListings SET status = ?, requires_admin_review = ? WHERE listing_id = ?',
+      [nextStatus, requiresAdminReview, listingId]
+    );
 
     if (isAdmin) {
       await logAction(db, {
@@ -157,7 +171,7 @@ router.post('/listings/:id/approve', requireAuth, requireAdmin, async (req, res)
     const [rows] = await db.query('SELECT listing_id FROM BookListings WHERE listing_id = ?', [listingId]);
     if (!rows.length) return res.status(404).json({ error: 'Listing not found.' });
 
-    await db.query("UPDATE BookListings SET status = 'Active' WHERE listing_id = ?", [listingId]);
+    await db.query("UPDATE BookListings SET status = 'Active', requires_admin_review = FALSE WHERE listing_id = ?", [listingId]);
 
     await logAction(db, {
       adminId:    user.user_id,

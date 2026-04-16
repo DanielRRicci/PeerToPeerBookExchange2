@@ -113,6 +113,60 @@ function isValidUsername(value) {
   return /^[A-Za-z0-9]{2,30}$/.test(value);
 }
 
+function normalizeListingStatus(value) {
+  const key = String(value || "").trim().toLowerCase();
+  const map = {
+    pending: "Pending",
+    active: "Active",
+    sold: "Sold",
+    removed: "Removed",
+    "under review": "Under Review",
+  };
+  return map[key] || null;
+}
+
+function getModerationState(currentStatus, requestedStatus, isAdmin) {
+  const normalizedCurrent = normalizeListingStatus(currentStatus) || "Active";
+  const normalizedRequested = normalizeListingStatus(requestedStatus) || normalizedCurrent;
+
+  if (isAdmin) {
+    return {
+      status: normalizedRequested,
+      requiresAdminReview: normalizedRequested !== "Active",
+    };
+  }
+
+  if (normalizedCurrent === "Active" && normalizedRequested === "Sold") {
+    return {
+      status: "Sold",
+      requiresAdminReview: true,
+    };
+  }
+
+  if (normalizedCurrent === "Sold" && normalizedRequested === "Active") {
+    return {
+      status: "Pending",
+      requiresAdminReview: true,
+    };
+  }
+
+  if (normalizedCurrent === "Sold" && normalizedRequested === "Sold") {
+    return {
+      status: "Sold",
+      requiresAdminReview: true,
+    };
+  }
+
+  if (normalizedCurrent === "Pending" && normalizedRequested === "Pending") {
+    return {
+      status: "Pending",
+      requiresAdminReview: true,
+    };
+  }
+
+  throw new Error("You can only mark an active listing as sold or relist a sold listing for review.");
+}
+
 async function ensureSchema() {
   await runQuery(`
     CREATE TABLE IF NOT EXISTS Users (
@@ -195,6 +249,7 @@ async function ensureSchema() {
     'ALTER TABLE Users ADD COLUMN is_suspended BOOLEAN NOT NULL DEFAULT FALSE',
     'ALTER TABLE Users ADD COLUMN suspended_at TIMESTAMP NULL DEFAULT NULL',
     'ALTER TABLE Users ADD COLUMN suspended_reason VARCHAR(500) NULL DEFAULT NULL',
+    'ALTER TABLE BookListings ADD COLUMN requires_admin_review BOOLEAN NOT NULL DEFAULT FALSE',
   ];
 
   for (const statement of addColumnStatements) {
@@ -377,10 +432,10 @@ app.get("/BookListings", async (req, res, next) => {
 
     if (!viewerIsAdmin) {
       if (viewerId > 0) {
-        conditions.push(`(LOWER(COALESCE(bl.status, '')) = 'active' OR bl.user_id = ?)`);
+        conditions.push(`((LOWER(COALESCE(bl.status, '')) = 'active' AND COALESCE(bl.requires_admin_review, 0) = 0) OR bl.user_id = ?)`);
         params.push(viewerId);
       } else {
-        conditions.push(`LOWER(COALESCE(bl.status, '')) = 'active'`);
+        conditions.push(`LOWER(COALESCE(bl.status, '')) = 'active' AND COALESCE(bl.requires_admin_review, 0) = 0`);
       }
     }
 
@@ -400,6 +455,7 @@ app.get("/BookListings", async (req, res, next) => {
         bl.book_condition,
         bl.notes,
         bl.status,
+        bl.requires_admin_review,
         bl.image_url,
         bl.created_at,
         u.full_name AS seller_name
@@ -455,41 +511,34 @@ app.put("/BookListings/:id", requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: "You can only edit your own listings." });
     }
 
-    const normalizeStatus = (value) => {
-      const key = String(value || "").trim().toLowerCase();
-      const map = {
-        pending: "Pending",
-        active: "Active",
-        sold: "Sold",
-        removed: "Removed",
-        "under review": "Under Review",
-      };
-      return map[key] || null;
+    const currentStatus = normalizeListingStatus(existingListing.status) || "Active";
+    let moderationState = {
+      status: normalizeListingStatus(status) || currentStatus,
+      requiresAdminReview: currentStatus !== "Active",
     };
-    const currentStatus = normalizeStatus(existingListing.status) || "Active";
-    let cleanedStatus = normalizeStatus(status) || currentStatus;
 
     if (!isAdmin) {
-      if (!["Active", "Sold"].includes(cleanedStatus)) {
-        return res.status(403).json({ error: "You can only use Active or Sold for your own listing." });
+      try {
+        moderationState = getModerationState(currentStatus, status, false);
+      } catch (error) {
+        return res.status(403).json({ error: error.message });
       }
-      if (currentStatus === "Sold" && cleanedStatus === "Active") {
-        cleanedStatus = "Pending";
-      }
+    } else {
+      moderationState = getModerationState(currentStatus, status, true);
     }
 
     await runQuery(
       `UPDATE BookListings
        SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
-           book_condition = ?, price = ?, notes = ?, status = ?
+           book_condition = ?, price = ?, notes = ?, status = ?, requires_admin_review = ?
        WHERE listing_id = ?`,
       [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode,
-       cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
+       cleanedCondition, numericPrice, cleanedNotes, moderationState.status, moderationState.requiresAdminReview, id]
     );
 
     const updated = await runQuery(
       `SELECT bl.listing_id, bl.user_id, bl.title, bl.author, bl.\`Edition\` AS edition,
-              bl.isbn, bl.price, bl.course_code, bl.book_condition, bl.notes, bl.status,
+              bl.isbn, bl.price, bl.course_code, bl.book_condition, bl.notes, bl.status, bl.requires_admin_review,
               bl.image_url, bl.created_at, u.full_name AS seller_name
        FROM BookListings bl
        JOIN Users u ON u.user_id = bl.user_id
@@ -499,7 +548,7 @@ app.put("/BookListings/:id", requireAuth, async (req, res, next) => {
 
     res.json({
       ...updated[0],
-      message: !isAdmin && currentStatus === "Sold" && cleanedStatus === "Pending"
+      message: !isAdmin && currentStatus === "Sold" && moderationState.status === "Pending"
         ? "Relisted listings return to pending review before becoming active again."
         : undefined,
     });
@@ -545,8 +594,8 @@ app.post("/BookListings", async (req, res, next) => {
 
     const [result] = await pool.execute(
       `INSERT INTO BookListings
-       (user_id, title, author, \`Edition\`, isbn, price, course_code, book_condition, notes, status, image_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', ?)`,
+       (user_id, title, author, \`Edition\`, isbn, price, course_code, book_condition, notes, status, requires_admin_review, image_url)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', TRUE, ?)`,
       [user_id, cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn,
        numericPrice, cleanedCourseCode, cleanedCondition, cleanedNotes, image_url || null]
     );
@@ -966,7 +1015,7 @@ app.get('/api/listings', async (req, res, next) => {
     if (!userId) return res.status(400).json({ error: 'userId query param is required.' });
     const rows = await runQuery(
       `SELECT listing_id, user_id, title, author, \`Edition\` AS edition, isbn,
-              course_code, book_condition, price, notes, status, image_url, created_at
+              course_code, book_condition, price, notes, status, requires_admin_review, image_url, created_at
        FROM BookListings WHERE user_id = ? ORDER BY created_at DESC`,
       [userId]
     );
@@ -1105,46 +1154,39 @@ app.put('/api/listings/:id', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'You can only edit your own listings.' });
     }
 
-    const normalizeStatus = (value) => {
-      const key = String(value || '').trim().toLowerCase();
-      const map = {
-        pending: 'Pending',
-        active: 'Active',
-        sold: 'Sold',
-        removed: 'Removed',
-        'under review': 'Under Review',
-      };
-      return map[key] || null;
+    const currentStatus = normalizeListingStatus(listing.status) || 'Active';
+    let moderationState = {
+      status: normalizeListingStatus(status) || currentStatus,
+      requiresAdminReview: currentStatus !== 'Active',
     };
-    const currentStatus = normalizeStatus(listing.status) || 'Active';
-    let cleanedStatus = normalizeStatus(status) || currentStatus;
 
     if (!isAdmin) {
-      if (!['Active', 'Sold'].includes(cleanedStatus)) {
-        return res.status(403).json({ error: 'You can only use Active or Sold for your own listing.' });
+      try {
+        moderationState = getModerationState(currentStatus, status, false);
+      } catch (error) {
+        return res.status(403).json({ error: error.message });
       }
-      if (currentStatus === 'Sold' && cleanedStatus === 'Active') {
-        cleanedStatus = 'Pending';
-      }
+    } else {
+      moderationState = getModerationState(currentStatus, status, true);
     }
 
     await runQuery(
       `UPDATE BookListings SET title = ?, author = ?, \`Edition\` = ?, isbn = ?, course_code = ?,
-              book_condition = ?, price = ?, notes = ?, status = ? WHERE listing_id = ?`,
+              book_condition = ?, price = ?, notes = ?, status = ?, requires_admin_review = ? WHERE listing_id = ?`,
       [cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn, cleanedCourseCode,
-       cleanedCondition, numericPrice, cleanedNotes, cleanedStatus, id]
+       cleanedCondition, numericPrice, cleanedNotes, moderationState.status, moderationState.requiresAdminReview, id]
     );
 
     const updated = await runQuery(
       `SELECT listing_id, user_id, title, author, \`Edition\` AS edition, isbn,
-              course_code, book_condition, price, notes, status, image_url, created_at
+              course_code, book_condition, price, notes, status, requires_admin_review, image_url, created_at
        FROM BookListings WHERE listing_id = ? LIMIT 1`,
       [id]
     );
 
     res.json({
       ...updated[0],
-      message: !isAdmin && currentStatus === 'Sold' && cleanedStatus === 'Pending'
+      message: !isAdmin && currentStatus === 'Sold' && moderationState.status === 'Pending'
         ? 'Relisted listings return to pending review before becoming active again.'
         : undefined,
     });
