@@ -512,19 +512,26 @@ app.put("/BookListings/:id", requireAuth, async (req, res, next) => {
     }
 
     const currentStatus = normalizeListingStatus(existingListing.status) || "Active";
+    const requestedStatus = normalizeListingStatus(status) || currentStatus;
     let moderationState = {
-      status: normalizeListingStatus(status) || currentStatus,
+      status: requestedStatus,
       requiresAdminReview: currentStatus !== "Active",
     };
+    const isOwnerSoldToggle =
+      isOwner &&
+      ((currentStatus === "Active" && requestedStatus === "Sold") ||
+       (currentStatus === "Sold" && requestedStatus === "Active"));
 
-    if (!isAdmin) {
+    if (isOwnerSoldToggle) {
+      moderationState = getModerationState(currentStatus, requestedStatus, false);
+    } else if (!isAdmin) {
       try {
-        moderationState = getModerationState(currentStatus, status, false);
+        moderationState = getModerationState(currentStatus, requestedStatus, false);
       } catch (error) {
         return res.status(403).json({ error: error.message });
       }
     } else {
-      moderationState = getModerationState(currentStatus, status, true);
+      moderationState = getModerationState(currentStatus, requestedStatus, true);
     }
 
     await runQuery(
@@ -1155,19 +1162,26 @@ app.put('/api/listings/:id', requireAuth, async (req, res, next) => {
     }
 
     const currentStatus = normalizeListingStatus(listing.status) || 'Active';
+    const requestedStatus = normalizeListingStatus(status) || currentStatus;
     let moderationState = {
-      status: normalizeListingStatus(status) || currentStatus,
+      status: requestedStatus,
       requiresAdminReview: currentStatus !== 'Active',
     };
+    const isOwnerSoldToggle =
+      isOwner &&
+      ((currentStatus === 'Active' && requestedStatus === 'Sold') ||
+       (currentStatus === 'Sold' && requestedStatus === 'Active'));
 
-    if (!isAdmin) {
+    if (isOwnerSoldToggle) {
+      moderationState = getModerationState(currentStatus, requestedStatus, false);
+    } else if (!isAdmin) {
       try {
-        moderationState = getModerationState(currentStatus, status, false);
+        moderationState = getModerationState(currentStatus, requestedStatus, false);
       } catch (error) {
         return res.status(403).json({ error: error.message });
       }
     } else {
-      moderationState = getModerationState(currentStatus, status, true);
+      moderationState = getModerationState(currentStatus, requestedStatus, true);
     }
 
     await runQuery(

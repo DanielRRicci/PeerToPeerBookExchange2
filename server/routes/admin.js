@@ -71,19 +71,14 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
 
     let nextStatus = requestedStatus;
     let requiresAdminReview = getReviewFlagForStatus(requestedStatus);
+    const isOwnerSoldToggle =
+      isOwner &&
+      ((currentStatus === 'Active' && requestedStatus === 'Sold') ||
+       (currentStatus === 'Sold' && requestedStatus === 'Active'));
 
-    // Non-admins can only touch their own listing with limited transitions.
-    if (!isAdmin) {
-      if (!isOwner) return res.status(403).json({ error: 'Not your listing.' });
-
-      const allowedOwnerTransition =
-        (currentStatus === 'Active' && requestedStatus === 'Sold') ||
-        (currentStatus === 'Sold' && requestedStatus === 'Active');
-
-      if (!allowedOwnerTransition) {
-        return res.status(403).json({ error: 'You can only mark an active listing as sold or relist a sold listing for review.' });
-      }
-
+    // Owners must always use the seller moderation flow for sold/relist actions,
+    // even if that owner also has admin access.
+    if (isOwnerSoldToggle) {
       if (currentStatus === 'Sold' && requestedStatus === 'Active') {
         nextStatus = 'Pending';
         requiresAdminReview = true;
@@ -93,6 +88,9 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
         nextStatus = 'Sold';
         requiresAdminReview = true;
       }
+    } else if (!isAdmin) {
+      if (!isOwner) return res.status(403).json({ error: 'Not your listing.' });
+      return res.status(403).json({ error: 'You can only mark an active listing as sold or relist a sold listing for review.' });
     }
 
     await db.query(
