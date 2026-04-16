@@ -221,6 +221,13 @@ export default function BookDetail() {
   const [reportSubmitting, setReportSubmitting] = useState(false);
   const [alreadyReported, setAlreadyReported] = useState(false);
   const [checkingReportStatus, setCheckingReportStatus] = useState(false);
+  const [feedback, setFeedback] = useState({
+    thumbs_up: 0,
+    thumbs_down: 0,
+    currentVote: null,
+  });
+  const [feedbackLoading, setFeedbackLoading] = useState(false);
+  const [feedbackSaving, setFeedbackSaving] = useState(false);
   const [reportData, setReportData] = useState({
     reasonType: "",
     reasonText: "",
@@ -365,6 +372,39 @@ export default function BookDetail() {
     fetchBlockStatus();
   }, [book?.user_id, currentUser?.id]);
 
+  useEffect(() => {
+    async function fetchFeedback() {
+      if (!book?.listing_id) {
+        setFeedback({ thumbs_up: 0, thumbs_down: 0, currentVote: null });
+        return;
+      }
+
+      setFeedbackLoading(true);
+      try {
+        const viewerQuery = currentUser?.id ? `?viewerId=${currentUser.id}` : "";
+        const res = await fetch(`${getApiBaseUrl()}/api/listings/${book.listing_id}/feedback${viewerQuery}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          setFeedback({ thumbs_up: 0, thumbs_down: 0, currentVote: null });
+          return;
+        }
+
+        setFeedback({
+          thumbs_up: Number(data.thumbs_up || 0),
+          thumbs_down: Number(data.thumbs_down || 0),
+          currentVote: data.currentVote || null,
+        });
+      } catch {
+        setFeedback({ thumbs_up: 0, thumbs_down: 0, currentVote: null });
+      } finally {
+        setFeedbackLoading(false);
+      }
+    }
+
+    fetchFeedback();
+  }, [book?.listing_id, currentUser?.id]);
+
   const displayImages = images.length > 0 ? images : [FALLBACK_IMG];
   const count         = displayImages.length;
   const condStyle     = conditionColor(book?.book_condition);
@@ -458,6 +498,34 @@ export default function BookDetail() {
       alert(err.message || "Failed to submit report.");
     } finally {
       setReportSubmitting(false);
+    }
+  }
+
+  async function handleFeedbackVote(vote) {
+    if (!currentUser?.id || !book?.listing_id || isOwn || feedbackSaving) return;
+
+    setFeedbackSaving(true);
+    try {
+      const res = await fetch(`${getApiBaseUrl()}/api/listings/${book.listing_id}/feedback`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-user-id": currentUser.id,
+        },
+        body: JSON.stringify({ vote }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to save feedback.");
+
+      setFeedback({
+        thumbs_up: Number(data.thumbs_up || 0),
+        thumbs_down: Number(data.thumbs_down || 0),
+        currentVote: data.currentVote || vote,
+      });
+    } catch (err) {
+      alert(err.message || "Failed to save feedback.");
+    } finally {
+      setFeedbackSaving(false);
     }
   }
 
