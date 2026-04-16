@@ -10,7 +10,10 @@ function fileTypeLabel(mimeType) {
   if (mimeType.startsWith("audio/")) return "Audio";
   if (mimeType.startsWith("video/")) return "Video";
   if (mimeType === "text/csv" || mimeType === "application/vnd.ms-excel") return "CSV";
-  if (mimeType === "application/vnd.ms-powerpoint" || mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation") return "PowerPoint";
+  if (
+    mimeType === "application/vnd.ms-powerpoint" ||
+    mimeType === "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+  ) return "PowerPoint";
   return "File";
 }
 
@@ -18,17 +21,10 @@ const ALLOWED_NOTE_TYPES = [
   "application/pdf",
   "application/vnd.ms-powerpoint",
   "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-  "image/jpeg",
-  "image/png",
-  "image/webp",
-  "image/gif",
-  "audio/mpeg",
-  "audio/wav",
-  "text/csv",
-  "application/vnd.ms-excel",
-  "video/mp4",
-  "video/quicktime",
-  
+  "image/jpeg", "image/png", "image/webp", "image/gif",
+  "audio/mpeg", "audio/wav",
+  "text/csv", "application/vnd.ms-excel",
+  "video/mp4", "video/quicktime",
 ];
 
 const ALLOWED_NOTE_ACCEPT = [
@@ -38,72 +34,67 @@ const ALLOWED_NOTE_ACCEPT = [
   "audio/mpeg,audio/wav",
   "video/mp4,video/quicktime",
   "application/vnd.ms-powerpoint,.ppt,application/vnd.openxmlformats-officedocument.presentationml.presentation,.pptx",
-
-
 ].join(",");
 
 function PostBook() {
   const navigate    = useNavigate();
-  const fileInputRef = useRef(null);
-  const currentUser  = getStoredUser();
+  const imgInputRef = useRef(null);
+  const currentUser = getStoredUser();
 
-  const [mode, setMode]   = useState("book");
+  const [mode, setMode] = useState("book");
   const [formData, setFormData] = useState({
     title: "", author: "", edition: "", isbn: "",
     course_code: "", book_condition: "Good", price: "", notes: "",
   });
-  const [imageSlots, setImageSlots] = useState([null, null, null, null, null, null]);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError]           = useState("");
+
+  // Images stored as array of { file, previewUrl } — max 6
+  const [images,       setImages]       = useState([]);
+  const [submitting,   setSubmitting]   = useState(false);
+  const [error,        setError]        = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const [notesData, setNotesData] = useState({ title: "", course_code: "", description: "" });
-  const [noteFile, setNoteFile]         = useState(null);
-  const [noteFileUploading, setNoteFileUploading] = useState(false);
+  const [notesData,         setNotesData]         = useState({ title: "", course_code: "", description: "" });
+  const [noteFile,          setNoteFile]           = useState(null);
+  const [noteFileUploading, setNoteFileUploading]  = useState(false);
 
+  // Revoke preview URLs on unmount
   useEffect(() => {
-    return () => {
-      imageSlots.forEach((slot) => { if (slot?.previewUrl) URL.revokeObjectURL(slot.previewUrl); });
-    };
-  }, [imageSlots]);
+    return () => { images.forEach((img) => URL.revokeObjectURL(img.previewUrl)); };
+  }, [images]);
 
   const handleChange      = (e) => setFormData((p) => ({ ...p, [e.target.name]: e.target.value }));
   const handleNotesChange = (e) => setNotesData((p) => ({ ...p, [e.target.name]: e.target.value }));
 
-  const getNextOpenSlotIndex = () => imageSlots.findIndex((s) => s === null);
-
-  const handleUploadButtonClick = () => {
+  function handleImageZoneClick() {
     setError("");
-    if (getNextOpenSlotIndex() === -1) { setError("You already added 6 images."); return; }
-    fileInputRef.current?.click();
-  };
+    if (images.length >= 6) { setError("You can upload a maximum of 6 photos."); return; }
+    imgInputRef.current?.click();
+  }
 
-  const handleImagePick = (e) => {
-    const file = e.target.files?.[0];
+  function handleImagePick(e) {
+    const files = Array.from(e.target.files || []);
     e.target.value = "";
-    if (!file) return;
-    const nextOpenIndex = getNextOpenSlotIndex();
-    if (nextOpenIndex === -1) { setError("You already added 6 images."); return; }
-    const previewUrl = URL.createObjectURL(file);
-    setImageSlots((prev) => {
-      const updated = [...prev];
-      updated[nextOpenIndex] = { file, previewUrl };
-      return updated;
-    });
-    setError("");
-  };
+    if (!files.length) return;
 
-  const removeImageAtIndex = (indexToRemove) => {
-    setImageSlots((prev) => {
-      const filledSlots = prev.filter((slot, index) => {
-        if (index === indexToRemove && prev[index]?.previewUrl) URL.revokeObjectURL(prev[index].previewUrl);
-        return index !== indexToRemove && slot !== null;
-      });
-      const rebuilt = [...filledSlots];
-      while (rebuilt.length < 6) rebuilt.push(null);
-      return rebuilt;
+    const remaining = 6 - images.length;
+    const toAdd = files.slice(0, remaining);
+
+    const newImages = toAdd.map((file) => ({ file, previewUrl: URL.createObjectURL(file) }));
+    setImages((prev) => [...prev, ...newImages]);
+
+    if (files.length > remaining) {
+      setError(`Only ${remaining} more image${remaining === 1 ? "" : "s"} allowed. First ${remaining} selected.`);
+    } else {
+      setError("");
+    }
+  }
+
+  function removeImage(index) {
+    setImages((prev) => {
+      URL.revokeObjectURL(prev[index].previewUrl);
+      return prev.filter((_, i) => i !== index);
     });
-  };
+  }
 
   const handleNoteFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -123,9 +114,9 @@ function PostBook() {
   const handleNotesSubmit = async (e) => {
     e.preventDefault();
     setError(""); setSuccessMessage("");
-    if (!currentUser?.id)            { setError("You must be logged in to post notes."); return; }
-    if (!notesData.title.trim())     { setError("Title is required."); return; }
-    if (!noteFile)                   { setError("Please select a file."); return; }
+    if (!currentUser?.id)        { setError("You must be logged in to post notes."); return; }
+    if (!notesData.title.trim()) { setError("Title is required."); return; }
+    if (!noteFile)               { setError("Please select a file."); return; }
     if (noteFile.size > 10 * 1024 * 1024) { setError("File too large. Maximum size is 10MB."); return; }
 
     setSubmitting(true); setNoteFileUploading(true);
@@ -136,12 +127,7 @@ function PostBook() {
       );
       const { uploadUrl, publicUrl } = await urlRes.json();
 
-      await fetch(uploadUrl, {
-        method: "PUT",
-        body: noteFile,
-        headers: { "Content-Type": noteFile.type },
-      });
-
+      await fetch(uploadUrl, { method: "PUT", body: noteFile, headers: { "Content-Type": noteFile.type } });
       setNoteFileUploading(false);
 
       const notesRes = await fetch(`${baseUrl}/Notes`, {
@@ -197,16 +183,15 @@ function PostBook() {
       if (!listingResponse.ok) throw new Error(listingData.error || listingData.message || "Failed to create listing.");
 
       const listingId = listingData.listing_id;
-      const selectedFiles = imageSlots.filter((s) => s !== null).map((s) => s.file);
 
-      if (selectedFiles.length > 0) {
+      if (images.length > 0) {
         const imageFormData = new FormData();
         imageFormData.append("prefix", "Post_Pic");
         imageFormData.append("listingId", String(listingId));
-        selectedFiles.forEach((file) => imageFormData.append("images", file));
+        images.forEach((img) => imageFormData.append("images", img.file));
         const imageResponse = await fetch(`${baseUrl}/api/images`, { method: "POST", body: imageFormData });
         const imageData = await imageResponse.json();
-        if (!imageResponse.ok) throw new Error(imageData.error || imageData.message || "Listing was created, but image upload failed.");
+        if (!imageResponse.ok) throw new Error(imageData.error || imageData.message || "Listing created, but image upload failed.");
       }
 
       setSuccessMessage("Listing posted successfully.");
@@ -225,32 +210,22 @@ function PostBook() {
         *, *::before, *::after { box-sizing: border-box; }
 
         .post-page {
-          min-height: calc(100vh - 64px);
-          width: 100vw;
-          display: flex;
-          align-items: flex-start;
-          justify-content: center;
-          font-family: 'DM Sans', sans-serif;
-          position: relative;
+          min-height: calc(100vh - 64px); width: 100vw;
+          display: flex; align-items: flex-start; justify-content: center;
+          font-family: 'DM Sans', sans-serif; position: relative;
           padding: 2.5rem 1.5rem;
           background:
             linear-gradient(rgba(0,0,0,0.72), rgba(0,0,0,0.72)),
             url('https://images.unsplash.com/photo-1481627834876-b7833e8f5570?q=80&w=2128&auto=format&fit=crop') center/cover no-repeat fixed;
         }
         .post-page::before {
-          content: '';
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
+          content: ''; position: absolute; inset: 0; pointer-events: none;
           background:
             radial-gradient(ellipse 60% 50% at 20% 50%, rgba(255,189,0,0.08) 0%, transparent 60%),
             radial-gradient(ellipse 40% 60% at 80% 30%, rgba(255,189,0,0.04) 0%, transparent 50%);
         }
         .post-page::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          pointer-events: none;
+          content: ''; position: absolute; inset: 0; pointer-events: none;
           background-image:
             linear-gradient(rgba(255,189,0,0.04) 1px, transparent 1px),
             linear-gradient(90deg, rgba(255,189,0,0.04) 1px, transparent 1px);
@@ -258,226 +233,107 @@ function PostBook() {
         }
 
         .post-card {
-          position: relative;
-          z-index: 1;
-          width: 100%;
-          max-width: 780px;
-          background: #fff;
-          border-radius: 20px;
+          position: relative; z-index: 1; width: 100%; max-width: 780px;
+          background: #fff; border-radius: 20px;
           box-shadow: 0 30px 80px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,189,0,0.12);
           overflow: hidden;
         }
 
-        .post-card-header {
-          background: #0a0a0a;
-          padding: 28px 36px 24px;
-          border-bottom: 3px solid #FFBD00;
-        }
-        .post-eyebrow {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 2.5px;
-          text-transform: uppercase;
-          color: rgba(255,189,0,0.6);
-          margin-bottom: 6px;
-        }
-        .post-heading {
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: 42px;
-          letter-spacing: 2px;
-          color: #FFBD00;
-          line-height: 1;
-          margin-bottom: 18px;
-        }
+        .post-card-header { background: #0a0a0a; padding: 28px 36px 24px; border-bottom: 3px solid #FFBD00; }
+        .post-eyebrow { font-size: 10px; font-weight: 700; letter-spacing: 2.5px; text-transform: uppercase; color: rgba(255,189,0,0.6); margin-bottom: 6px; }
+        .post-heading { font-family: 'Bebas Neue', sans-serif; font-size: 42px; letter-spacing: 2px; color: #FFBD00; line-height: 1; margin-bottom: 18px; }
 
-        .mode-toggle {
-          display: flex;
-          border-radius: 8px;
-          overflow: hidden;
-          border: 2px solid rgba(255,189,0,0.3);
-          width: fit-content;
-        }
-        .mode-btn {
-          padding: 8px 22px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          border: none;
-          cursor: pointer;
-          transition: background 0.18s, color 0.18s;
-        }
+        .mode-toggle { display: flex; border-radius: 8px; overflow: hidden; border: 2px solid rgba(255,189,0,0.3); width: fit-content; }
+        .mode-btn { padding: 8px 22px; font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; border: none; cursor: pointer; transition: background 0.18s, color 0.18s; }
         .mode-btn.active  { background: #FFBD00; color: #0a0a0a; }
         .mode-btn.inactive { background: transparent; color: rgba(255,255,255,0.5); }
         .mode-btn.inactive:hover { color: rgba(255,255,255,0.85); }
 
         .post-card-body { padding: 28px 36px 32px; }
 
-        .post-error {
-          padding: 10px 14px;
-          background: #fef2f2;
-          border-left: 3px solid #dc2626;
-          border-radius: 6px;
-          color: #dc2626;
-          font-size: 13px;
-          margin-bottom: 18px;
-        }
-        .post-success {
-          padding: 10px 14px;
-          background: #f0fdf4;
-          border-left: 3px solid #22c55e;
-          border-radius: 6px;
-          color: #15803d;
-          font-size: 13px;
-          margin-bottom: 18px;
-          font-weight: 600;
-        }
+        .post-error   { padding: 10px 14px; background: #fef2f2; border-left: 3px solid #dc2626; border-radius: 6px; color: #dc2626; font-size: 13px; margin-bottom: 18px; }
+        .post-success { padding: 10px 14px; background: #f0fdf4; border-left: 3px solid #22c55e; border-radius: 6px; color: #15803d; font-size: 13px; margin-bottom: 18px; font-weight: 600; }
 
-        .form-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 14px;
-        }
-        .form-full { grid-column: 1 / -1; }
+        .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+        .form-full  { grid-column: 1 / -1; }
         .form-group { display: flex; flex-direction: column; }
-        .form-label {
-          font-size: 10px;
-          font-weight: 700;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          color: #666;
-          margin-bottom: 5px;
-        }
-        .form-input,
-        .form-select,
-        .form-textarea {
-          padding: 10px 13px;
-          border: 1.5px solid #e8e8e8;
-          border-radius: 8px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 13px;
-          color: #0a0a0a;
-          background: #fafafa;
-          outline: none;
-          transition: border-color 0.2s, box-shadow 0.2s;
-          width: 100%;
+        .form-label { font-size: 10px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: #666; margin-bottom: 5px; }
+        .form-input, .form-select, .form-textarea {
+          padding: 10px 13px; border: 1.5px solid #e8e8e8; border-radius: 8px;
+          font-family: 'DM Sans', sans-serif; font-size: 13px; color: #0a0a0a;
+          background: #fafafa; outline: none;
+          transition: border-color 0.2s, box-shadow 0.2s; width: 100%;
         }
         .form-input:focus, .form-select:focus, .form-textarea:focus {
-          border-color: #FFBD00;
-          background: #fff;
-          box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
+          border-color: #FFBD00; background: #fff; box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
         }
         .form-textarea { min-height: 100px; resize: vertical; }
 
-        .img-section { margin-top: 4px; }
-        .img-grid {
-          display: grid;
-          grid-template-columns: repeat(3, 1fr);
-          gap: 10px;
-          margin: 8px 0 12px;
+        /* ── Image upload zone (matches notes file zone) ── */
+        .img-upload-zone {
+          border: 2px dashed #e8e8e8; border-radius: 10px;
+          padding: 24px; text-align: center; background: #fafafa;
+          cursor: pointer; transition: border-color 0.2s, background 0.2s; margin-top: 6px;
         }
-        .img-slot {
-          position: relative;
-          aspect-ratio: 1 / 1;
-          border: 2px dashed #ddd;
-          border-radius: 10px;
-          background: #fafafa;
-          overflow: hidden;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-        .img-slot-empty { color: #bbb; font-size: 12px; font-weight: 600; }
-        .img-preview { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .img-num-badge {
-          position: absolute;
-          top: 7px; left: 7px;
-          background: rgba(0,0,0,0.75);
-          color: #fff;
-          font-size: 10px;
-          font-weight: 700;
-          padding: 3px 7px;
-          border-radius: 999px;
-          z-index: 1;
-        }
-        .img-remove {
-          position: absolute;
-          top: 7px; right: 7px;
-          width: 26px; height: 26px;
-          border-radius: 50%;
-          border: none;
-          background: rgba(0,0,0,0.75);
-          color: #fff;
-          font-weight: 800;
-          cursor: pointer;
-          z-index: 1;
-          display: flex;
-          align-items: center;
-          justify-content: center;
-          font-size: 14px;
-        }
-        .upload-btn {
-          width: 100%;
-          padding: 11px;
-          background: #fafafa;
-          color: #0a0a0a;
-          border: 1.5px solid #e8e8e8;
-          border-radius: 8px;
-          font-family: 'DM Sans', sans-serif;
-          font-size: 13px;
-          font-weight: 700;
-          cursor: pointer;
-          transition: border-color 0.2s, background 0.2s;
-        }
-        .upload-btn:hover { border-color: #FFBD00; background: #fff; }
-        .helper-text { margin-top: 7px; color: #aaa; font-size: 12px; }
+        .img-upload-zone:hover { border-color: #FFBD00; background: #fff; }
+        .img-upload-zone.has-images { padding: 16px; text-align: left; }
+        .img-upload-zone-hint { color: #aaa; font-size: 13px; }
+        .img-upload-zone-sub  { color: #bbb; font-size: 11px; margin-top: 6px; }
 
+        /* Thumbnail strip */
+        .img-thumb-strip { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+        .img-thumb {
+          position: relative; width: 72px; height: 72px;
+          border-radius: 8px; overflow: hidden;
+          border: 2px solid #e8e8e8; background: #f0f0f0; flex-shrink: 0;
+        }
+        .img-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+        .img-thumb-num {
+          position: absolute; top: 4px; left: 4px;
+          background: rgba(0,0,0,0.7); color: #fff;
+          font-size: 9px; font-weight: 700; padding: 2px 5px; border-radius: 999px;
+        }
+        .img-thumb-remove {
+          position: absolute; top: 4px; right: 4px;
+          width: 18px; height: 18px; border-radius: 50%;
+          background: rgba(0,0,0,0.7); color: #fff;
+          border: none; cursor: pointer; font-size: 11px; font-weight: 800;
+          display: flex; align-items: center; justify-content: center;
+        }
+        .img-add-more {
+          display: inline-flex; align-items: center; gap: 5px;
+          font-size: 12px; font-weight: 700; color: #888;
+          background: #f0f0f0; border: 1.5px dashed #ddd;
+          border-radius: 8px; padding: 6px 12px; cursor: pointer;
+          transition: border-color 0.2s, color 0.2s;
+        }
+        .img-add-more:hover { border-color: #FFBD00; color: #0a0a0a; }
+
+        /* Notes file zone */
         .file-zone {
-          border: 2px dashed #e8e8e8;
-          border-radius: 10px;
-          padding: 24px;
-          text-align: center;
-          background: #fafafa;
-          cursor: pointer;
-          transition: border-color 0.2s, background 0.2s;
-          margin-top: 6px;
+          border: 2px dashed #e8e8e8; border-radius: 10px; padding: 24px;
+          text-align: center; background: #fafafa; cursor: pointer;
+          transition: border-color 0.2s, background 0.2s; margin-top: 6px;
         }
         .file-zone:hover { border-color: #FFBD00; background: #fff; }
-        .file-zone-text { color: #aaa; font-size: 13px; }
-        .file-zone-name { font-weight: 700; color: #0a0a0a; font-size: 13px; }
-        .file-zone-type { font-size: 11px; color: #888; margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+        .file-zone-text  { color: #aaa; font-size: 13px; }
+        .file-zone-name  { font-weight: 700; color: #0a0a0a; font-size: 13px; }
+        .file-zone-type  { font-size: 11px; color: #888; margin-top: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
         .file-zone-types { color: #bbb; font-size: 11px; margin-top: 6px; }
 
         .submit-btn {
-          width: 100%;
-          padding: 14px;
-          background: #0a0a0a;
-          color: #FFBD00;
-          border: none;
-          border-radius: 8px;
-          font-family: 'Bebas Neue', sans-serif;
-          font-size: 18px;
-          letter-spacing: 2px;
-          cursor: pointer;
-          margin-top: 20px;
-          transition: background 0.2s, transform 0.15s;
+          width: 100%; padding: 14px; background: #0a0a0a; color: #FFBD00;
+          border: none; border-radius: 8px;
+          font-family: 'Bebas Neue', sans-serif; font-size: 18px; letter-spacing: 2px;
+          cursor: pointer; margin-top: 20px; transition: background 0.2s, transform 0.15s;
         }
         .submit-btn:hover:not(:disabled) { background: #222; transform: translateY(-1px); }
         .submit-btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
         .back-link {
-          display: inline-flex;
-          align-items: center;
-          gap: 5px;
-          font-size: 12px;
-          font-weight: 700;
-          letter-spacing: 1.5px;
-          text-transform: uppercase;
-          color: #aaa;
-          text-decoration: none;
-          margin-top: 18px;
-          transition: color 0.2s;
+          display: inline-flex; align-items: center; gap: 5px;
+          font-size: 12px; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase;
+          color: #aaa; text-decoration: none; margin-top: 18px; transition: color 0.2s;
         }
         .back-link:hover { color: #FFBD00; }
 
@@ -487,7 +343,6 @@ function PostBook() {
           .post-heading { font-size: 32px; }
           .post-card-body { padding: 18px 18px 24px; }
           .form-grid { grid-template-columns: 1fr; }
-          .img-grid { grid-template-columns: repeat(3, 1fr); gap: 6px; }
           .mode-toggle { width: 100%; }
           .mode-btn { flex: 1; text-align: center; padding: 10px 8px; }
         }
@@ -498,25 +353,10 @@ function PostBook() {
 
           <div className="post-card-header">
             <div className="post-eyebrow">UWM Student Marketplace</div>
-            <div className="post-heading">
-              {mode === "book" ? "Post a Book" : "Upload Notes"}
-            </div>
-
+            <div className="post-heading">{mode === "book" ? "Post a Book" : "Upload Notes"}</div>
             <div className="mode-toggle">
-              <button
-                type="button"
-                className={`mode-btn ${mode === "book" ? "active" : "inactive"}`}
-                onClick={() => { setMode("book"); setError(""); setSuccessMessage(""); }}
-              >
-                Book
-              </button>
-              <button
-                type="button"
-                className={`mode-btn ${mode === "notes" ? "active" : "inactive"}`}
-                onClick={() => { setMode("notes"); setError(""); setSuccessMessage(""); }}
-              >
-                Notes
-              </button>
+              <button type="button" className={`mode-btn ${mode === "book" ? "active" : "inactive"}`} onClick={() => { setMode("book"); setError(""); setSuccessMessage(""); }}>Book</button>
+              <button type="button" className={`mode-btn ${mode === "notes" ? "active" : "inactive"}`} onClick={() => { setMode("notes"); setError(""); setSuccessMessage(""); }}>Notes</button>
             </div>
           </div>
 
@@ -524,7 +364,7 @@ function PostBook() {
             {error          && <div className="post-error">{error}</div>}
             {successMessage && <div className="post-success">{successMessage}</div>}
 
-            {/* Book form */}
+            {/* ── Book form ── */}
             {mode === "book" && (
               <form onSubmit={handleSubmit}>
                 <div className="form-grid">
@@ -566,26 +406,52 @@ function PostBook() {
                     <label className="form-label">Notes</label>
                     <textarea className="form-textarea" name="notes" placeholder="Any highlights, wear, missing pages, access code info, etc." value={formData.notes} onChange={handleChange} />
                   </div>
-                  <div className="form-group form-full img-section">
+
+                  {/* ── New image upload zone ── */}
+                  <div className="form-group form-full">
                     <label className="form-label">Photos (up to 6)</label>
-                    <div className="img-grid">
-                      {imageSlots.map((slot, index) => (
-                        <div key={index} className="img-slot">
-                          <div className="img-num-badge">{index + 1}</div>
-                          {slot ? (
-                            <>
-                              <img src={slot.previewUrl} alt={`Preview ${index + 1}`} className="img-preview" />
-                              <button type="button" className="img-remove" onClick={() => removeImageAtIndex(index)}>×</button>
-                            </>
-                          ) : (
-                            <div className="img-slot-empty">Empty</div>
-                          )}
-                        </div>
-                      ))}
+                    <div
+                      className={`img-upload-zone${images.length > 0 ? " has-images" : ""}`}
+                      onClick={images.length < 6 ? handleImageZoneClick : undefined}
+                      style={{ cursor: images.length >= 6 ? "default" : "pointer" }}
+                    >
+                      {images.length === 0 ? (
+                        <>
+                          <div className="img-upload-zone-hint">Click to add photos</div>
+                          <div className="img-upload-zone-sub">JPG · PNG · WEBP — Up to 6 photos</div>
+                        </>
+                      ) : (
+                        <>
+                          <div className="img-thumb-strip">
+                            {images.map((img, i) => (
+                              <div key={i} className="img-thumb">
+                                <div className="img-thumb-num">{i + 1}</div>
+                                <img src={img.previewUrl} alt={`Photo ${i + 1}`} />
+                                <button
+                                  type="button"
+                                  className="img-thumb-remove"
+                                  onClick={(e) => { e.stopPropagation(); removeImage(i); }}
+                                >×</button>
+                              </div>
+                            ))}
+                            {images.length < 6 && (
+                              <div className="img-add-more" onClick={(e) => { e.stopPropagation(); handleImageZoneClick(); }}>
+                                + Add more
+                              </div>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: "#bbb" }}>{images.length} / 6 photos added</div>
+                        </>
+                      )}
                     </div>
-                    <button type="button" className="upload-btn" onClick={handleUploadButtonClick}>+ Upload Image</button>
-                    <input ref={fileInputRef} type="file" accept="image/jpeg,image/png,image/webp,image/gif" onChange={handleImagePick} style={{ display: "none" }} />
-                    <div className="helper-text">Each new image fills the next open slot.</div>
+                    <input
+                      ref={imgInputRef}
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      multiple
+                      onChange={handleImagePick}
+                      style={{ display: "none" }}
+                    />
                   </div>
                 </div>
                 <button type="submit" className="submit-btn" disabled={submitting}>
@@ -594,7 +460,7 @@ function PostBook() {
               </form>
             )}
 
-            {/* Notes form */}
+            {/* ── Notes form ── */}
             {mode === "notes" && (
               <form onSubmit={handleNotesSubmit}>
                 <div className="form-grid">
@@ -621,17 +487,11 @@ function PostBook() {
                       ) : (
                         <>
                           <span className="file-zone-text">Click to select a file</span>
-                          <div className="file-zone-types">PDF · Image · Audio · Video · CSV · PowerPoint — Max 10MB</div>
+                          <div className="file-zone-types">PDF · Image · Audio · GIF · Video · CSV · PowerPoint — Max 10MB</div>
                         </>
                       )}
                     </div>
-                    <input
-                      id="noteFileInput"
-                      type="file"
-                      accept={ALLOWED_NOTE_ACCEPT}
-                      style={{ display: "none" }}
-                      onChange={handleNoteFileChange}
-                    />
+                    <input id="noteFileInput" type="file" accept={ALLOWED_NOTE_ACCEPT} style={{ display: "none" }} onChange={handleNoteFileChange} />
                   </div>
                 </div>
                 <button type="submit" className="submit-btn" disabled={submitting}>
