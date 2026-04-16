@@ -350,19 +350,41 @@ app.get("/db-test", async (req, res, next) => {
 app.get("/BookListings", async (req, res, next) => {
   try {
     const viewerId = Number(req.query.viewerId || 0);
+    let viewerIsAdmin = false;
 
-    const whereClause = viewerId > 0
-      ? `
-        WHERE NOT EXISTS (
+    if (viewerId > 0) {
+      const [viewerRows] = await pool.query(
+        "SELECT role FROM Users WHERE user_id = ? LIMIT 1",
+        [viewerId]
+      );
+      viewerIsAdmin = viewerRows[0]?.role === "admin";
+    }
+
+    const conditions = [];
+    const params = [];
+
+    if (viewerId > 0) {
+      conditions.push(`
+        NOT EXISTS (
           SELECT 1
           FROM UserBlocks ub
           WHERE (ub.blocker_id = ? AND ub.blocked_id = bl.user_id)
              OR (ub.blocker_id = bl.user_id AND ub.blocked_id = ?)
         )
-      `
-      : "";
+      `);
+      params.push(viewerId, viewerId);
+    }
 
-    const params = viewerId > 0 ? [viewerId, viewerId] : [];
+    if (!viewerIsAdmin) {
+      if (viewerId > 0) {
+        conditions.push(`(LOWER(COALESCE(bl.status, '')) = 'active' OR bl.user_id = ?)`);
+        params.push(viewerId);
+      } else {
+        conditions.push(`LOWER(COALESCE(bl.status, '')) = 'active'`);
+      }
+    }
+
+    const whereClause = conditions.length ? `WHERE ${conditions.join(" AND ")}` : "";
 
     const [rows] = await pool.query(
       `
@@ -433,14 +455,25 @@ app.put("/BookListings/:id", requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: "You can only edit your own listings." });
     }
 
-    const allowedStatuses = ["Pending", "Active", "Sold", "Removed", "Under Review"];
-    let cleanedStatus = allowedStatuses.includes(status) ? status : (existingListing.status || "Active");
+    const normalizeStatus = (value) => {
+      const key = String(value || "").trim().toLowerCase();
+      const map = {
+        pending: "Pending",
+        active: "Active",
+        sold: "Sold",
+        removed: "Removed",
+        "under review": "Under Review",
+      };
+      return map[key] || null;
+    };
+    const currentStatus = normalizeStatus(existingListing.status) || "Active";
+    let cleanedStatus = normalizeStatus(status) || currentStatus;
 
     if (!isAdmin) {
       if (!["Active", "Sold"].includes(cleanedStatus)) {
         return res.status(403).json({ error: "You can only use Active or Sold for your own listing." });
       }
-      if (existingListing.status === "Sold" && cleanedStatus === "Active") {
+      if (currentStatus === "Sold" && cleanedStatus === "Active") {
         cleanedStatus = "Pending";
       }
     }
@@ -466,7 +499,7 @@ app.put("/BookListings/:id", requireAuth, async (req, res, next) => {
 
     res.json({
       ...updated[0],
-      message: !isAdmin && existingListing.status === "Sold" && cleanedStatus === "Pending"
+      message: !isAdmin && currentStatus === "Sold" && cleanedStatus === "Pending"
         ? "Relisted listings return to pending review before becoming active again."
         : undefined,
     });
@@ -1072,14 +1105,25 @@ app.put('/api/listings/:id', requireAuth, async (req, res, next) => {
       return res.status(403).json({ error: 'You can only edit your own listings.' });
     }
 
-    const allowedStatuses = ["Pending", "Active", "Sold", "Removed", "Under Review"];
-    let cleanedStatus = allowedStatuses.includes(status) ? status : (listing.status || 'Active');
+    const normalizeStatus = (value) => {
+      const key = String(value || '').trim().toLowerCase();
+      const map = {
+        pending: 'Pending',
+        active: 'Active',
+        sold: 'Sold',
+        removed: 'Removed',
+        'under review': 'Under Review',
+      };
+      return map[key] || null;
+    };
+    const currentStatus = normalizeStatus(listing.status) || 'Active';
+    let cleanedStatus = normalizeStatus(status) || currentStatus;
 
     if (!isAdmin) {
       if (!['Active', 'Sold'].includes(cleanedStatus)) {
         return res.status(403).json({ error: 'You can only use Active or Sold for your own listing.' });
       }
-      if (listing.status === 'Sold' && cleanedStatus === 'Active') {
+      if (currentStatus === 'Sold' && cleanedStatus === 'Active') {
         cleanedStatus = 'Pending';
       }
     }
@@ -1100,7 +1144,7 @@ app.put('/api/listings/:id', requireAuth, async (req, res, next) => {
 
     res.json({
       ...updated[0],
-      message: !isAdmin && listing.status === 'Sold' && cleanedStatus === 'Pending'
+      message: !isAdmin && currentStatus === 'Sold' && cleanedStatus === 'Pending'
         ? 'Relisted listings return to pending review before becoming active again.'
         : undefined,
     });

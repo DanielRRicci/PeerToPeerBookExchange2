@@ -8,6 +8,18 @@ const express = require('express');
 const router  = express.Router();
 const { requireAuth, requireAdmin } = require('../middleware/auth');
 
+function normalizeStatus(status) {
+  const key = String(status || '').trim().toLowerCase();
+  const map = {
+    pending: 'Pending',
+    active: 'Active',
+    sold: 'Sold',
+    removed: 'Removed',
+    'under review': 'Under Review',
+  };
+  return map[key] || null;
+}
+
 // ─── helper: write a moderation log entry ────────────────────────────────────
 async function logAction(db, { adminId, actionType, targetType, targetId, notes = null }) {
   await db.query(
@@ -35,7 +47,8 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
   const user = req.currentUser;
 
   const VALID_STATUSES = ['Pending', 'Active', 'Sold', 'Removed', 'Under Review'];
-  if (!VALID_STATUSES.includes(status)) {
+  const requestedStatus = normalizeStatus(status);
+  if (!requestedStatus) {
     return res.status(400).json({ error: `Invalid status. Must be one of: ${VALID_STATUSES.join(', ')}` });
   }
 
@@ -51,22 +64,22 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
     const isOwner = listing.user_id === user.user_id;
     const isAdmin = user.role === 'admin';
 
-    let nextStatus = status;
+    let nextStatus = requestedStatus;
 
     // Non-admins can only touch their own listing with limited transitions.
     if (!isAdmin) {
       if (!isOwner) return res.status(403).json({ error: 'Not your listing.' });
 
-      const currentStatus = String(listing.status || '');
+      const currentStatus = normalizeStatus(listing.status) || String(listing.status || '').trim();
       const allowedOwnerTransition =
-        (currentStatus === 'Active' && status === 'Sold') ||
-        (currentStatus === 'Sold' && status === 'Active');
+        (currentStatus === 'Active' && requestedStatus === 'Sold') ||
+        (currentStatus === 'Sold' && requestedStatus === 'Active');
 
       if (!allowedOwnerTransition) {
         return res.status(403).json({ error: 'You can only mark an active listing as sold or relist a sold listing for review.' });
       }
 
-      if (currentStatus === 'Sold' && status === 'Active') {
+      if (currentStatus === 'Sold' && requestedStatus === 'Active') {
         nextStatus = 'Pending';
       }
     }
@@ -108,6 +121,7 @@ router.patch('/listings/:id/status', requireAuth, async (req, res) => {
 router.get('/listings', requireAuth, requireAdmin, async (req, res) => {
   const db = req.app.get('db');
   const { status } = req.query;
+  const normalizedFilter = normalizeStatus(status);
 
   try {
     let sql    = `SELECT bl.*, u.full_name AS seller_name, u.email AS seller_email
@@ -115,9 +129,9 @@ router.get('/listings', requireAuth, requireAdmin, async (req, res) => {
                   JOIN Users u ON u.user_id = bl.user_id`;
     const args = [];
 
-    if (status) {
-      sql += ' WHERE bl.status = ?';
-      args.push(status);
+    if (normalizedFilter) {
+      sql += ' WHERE LOWER(COALESCE(bl.status, \'\')) = LOWER(?)';
+      args.push(normalizedFilter);
     }
 
     sql += ' ORDER BY bl.created_at DESC';
@@ -355,11 +369,11 @@ router.get('/stats', requireAuth, requireAdmin, async (req, res) => {
     const [[listingStats]] = await db.query(`
       SELECT
         COUNT(*) AS total_listings,
-        SUM(status = 'Pending')      AS pending,
-        SUM(status = 'Active')       AS active,
-        SUM(status = 'Sold')         AS sold,
-        SUM(status = 'Removed')      AS removed,
-        SUM(status = 'Under Review') AS under_review
+        SUM(LOWER(COALESCE(status, '')) = 'pending')      AS pending,
+        SUM(LOWER(COALESCE(status, '')) = 'active')       AS active,
+        SUM(LOWER(COALESCE(status, '')) = 'sold')         AS sold,
+        SUM(LOWER(COALESCE(status, '')) = 'removed')      AS removed,
+        SUM(LOWER(COALESCE(status, '')) = 'under review') AS under_review
       FROM BookListings
     `);
 
