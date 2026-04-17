@@ -3,6 +3,155 @@ import { useNavigate } from "react-router-dom";
 import { getApiBaseUrl } from "./apiBaseUrl";
 import { getStoredUser } from "./auth";
 
+// CHANGED: Added the full UWM Department list for the dropdowns
+const DEPARTMENT_OPTIONS = [
+  { value: "ACTSCI", label: "Actuarial Science (ACTSCI)" },
+  { value: "AD LDSP", label: "Administrative Leadership (AD LDSP)" },
+  { value: "AFRIC", label: "African and African Diaspora Studies (AFRIC)" },
+  { value: "AFAS", label: "Air Force and Aerospace Studies (AFAS)" },
+  { value: "AIS", label: "American Indian Studies (AIS)" },
+  { value: "ASL", label: "American Sign Language (ASL)" },
+  { value: "AMLLC", label: "Ancient and Modern Languages, Literatures and Cultures (AMLLC)" },
+  { value: "ANTHRO", label: "Anthropology (ANTHRO)" },
+  { value: "APC", label: "Applied Computing (APC)" },
+  { value: "ARABIC", label: "Arabic (ARABIC)" },
+  { value: "ARCH", label: "Architecture (ARCH)" },
+  { value: "ART", label: "Art and Design (ART)" },
+  { value: "ART ED", label: "Art Education (ART ED)" },
+  { value: "ARTHIST", label: "Art History (ARTHIST)" },
+  { value: "ASTRON", label: "Astronomy (ASTRON)" },
+  { value: "ATRAIN", label: "Athletic Training (ATRAIN)" },
+  { value: "ATM SCI", label: "Atmospheric Sciences (ATM SCI)" },
+  { value: "BIO SCI", label: "Biological Sciences (BIO SCI)" },
+  { value: "BME", label: "Biomedical Engineering (BME)" },
+  { value: "BMS", label: "Biomedical Sciences (BMS)" },
+  { value: "BUS ADM", label: "Business Administration (BUS ADM)" },
+  { value: "BUSMGMT", label: "Business Management (BUSMGMT)" },
+  { value: "CELTIC", label: "Celtic Studies (CELTIC)" },
+  { value: "CGS ANT", label: "CGS Anthropology (CGS ANT)" },
+  { value: "CGS ART", label: "CGS Art (CGS ART)" },
+  { value: "CGS BIO", label: "CGS Biology (CGS BIO)" },
+  { value: "CGS BUS", label: "CGS Business (CGS BUS)" },
+  { value: "CGS CHE", label: "CGS Chemistry (CGS CHE)" },
+  { value: "CGS CTA", label: "CGS Communication Arts and Theatre (CGS CTA)" },
+  { value: "CGS ENG", label: "CGS English (CGS ENG)" },
+  { value: "CGS GSW", label: "CGS Gender, Sexuality, and Women's Studies (CGS GSW)" },
+  { value: "CGS GEO", label: "CGS Geography (CGS GEO)" },
+  { value: "CGS HES", label: "CGS Health and Exercise Sciences (CGS HES)" },
+  { value: "CGS HIS", label: "CGS History (CGS HIS)" },
+  { value: "CGS INT", label: "CGS Interdisciplinary Studies (CGS INT)" },
+  { value: "CGS MAT", label: "CGS Mathematics (CGS MAT)" },
+  { value: "CGS MUS", label: "CGS Music (CGS MUS)" },
+  { value: "CGS POL", label: "CGS Political Science (CGS POL)" },
+  { value: "CGS PSY", label: "CGS Psychology (CGS PSY)" },
+  { value: "CGS REL", label: "CGS Religious Studies (CGS REL)" },
+  { value: "CGS SOC", label: "CGS Sociology (CGS SOC)" },
+  { value: "CGS SPA", label: "CGS Spanish (CGS SPA)" },
+  { value: "CHEM", label: "Chemistry and Biochemistry (CHEM)" },
+  { value: "CHINESE", label: "Chinese (CHINESE)" },
+  { value: "CIV ENG", label: "Civil and Environmental Engineering (CIV ENG)" },
+  { value: "CLASSIC", label: "Classics (CLASSIC)" },
+  { value: "CHPS", label: "College of Health Professions and Sciences (CHPS)" },
+  { value: "COMMUN", label: "Communication (COMMUN)" },
+  { value: "COMSDIS", label: "Communication Sciences and Disorders (COMSDIS)" },
+  { value: "COMPLIT", label: "Comparative Literature (COMPLIT)" },
+  { value: "COMPSCI", label: "Computer Science (COMPSCI)" },
+  { value: "COMPST", label: "Computer Studies (COMPST)" },
+  { value: "CES", label: "Conservation and Environmental Sciences (CES)" },
+  { value: "COUNS", label: "Counseling (COUNS)" },
+  { value: "CRM JST", label: "Criminal Justice and Criminology (CRM JST)" },
+  { value: "CURRINS", label: "Curriculum and Instruction (CURRINS)" },
+  { value: "DANCE", label: "Dance (DANCE)" },
+  { value: "DMI", label: "Diagnostic Imaging (DMI)" },
+  { value: "DAC", label: "Digital Arts and Culture (DAC)" },
+  { value: "ECON", label: "Economics (ECON)" },
+  { value: "EDUC", label: "Education-Interdepartmental (EDUC)" },
+  { value: "ED POL", label: "Educational Policy and Community Studies (ED POL)" },
+  { value: "ED PSY", label: "Educational Psychology (ED PSY)" },
+  { value: "ELECENG", label: "Electrical Engineering (ELECENG)" },
+  { value: "EAS", label: "Engineering and Applied Science (EAS)" },
+  { value: "ENGLISH", label: "English (ENGLISH)" },
+  { value: "EAP", label: "English for Academic Purposes (EAP)" },
+  { value: "ETHNIC", label: "Ethnic Studies, Comparative (ETHNIC)" },
+  { value: "EXCEDUC", label: "Exceptional Education (EXCEDUC)" },
+  { value: "FILMSTD", label: "Film Studies (FILMSTD)" },
+  { value: "FILM", label: "Film, Video, Animation and New Genres (FILM)" },
+  { value: "FITWELL", label: "Fitness, Wellness and Sport (FITWELL)" },
+  { value: "FOODBEV", label: "Food and Beverage Studies (FOODBEV)" },
+  { value: "FRENCH", label: "French (FRENCH)" },
+  { value: "FRSHWTR", label: "Freshwater Sciences (FRSHWTR)" },
+  { value: "GEOG", label: "Geography (GEOG)" },
+  { value: "GEO SCI", label: "Geosciences (GEO SCI)" },
+  { value: "GERMAN", label: "German (GERMAN)" },
+  { value: "GLOBAL", label: "Global Studies (GLOBAL)" },
+  { value: "GRAD", label: "Graduate Studies (GRAD)" },
+  { value: "GREEK", label: "Greek (GREEK)" },
+  { value: "HCA", label: "Health Care Administration (HCA)" },
+  { value: "HI", label: "Health Care Informatics (HI)" },
+  { value: "HEBREW", label: "Hebrew (HEBREW)" },
+  { value: "HIST", label: "History (HIST)" },
+  { value: "HMONG", label: "Hmong Studies (HMONG)" },
+  { value: "HONORS", label: "Honors College (HONORS)" },
+  { value: "IND REL", label: "Industrial and Labor Relations (IND REL)" },
+  { value: "IND ENG", label: "Industrial and Manufacturing Engineering (IND ENG)" },
+  { value: "INFOST", label: "Information Studies (INFOST)" },
+  { value: "INTLST", label: "International Studies (INTLST)" },
+  { value: "ITALIAN", label: "Italian (ITALIAN)" },
+  { value: "JAPAN", label: "Japanese (JAPAN)" },
+  { value: "JEWISH", label: "Jewish Studies (JEWISH)" },
+  { value: "JAMS", label: "Journalism, Advertising, and Media Studies (JAMS)" },
+  { value: "KIN", label: "Kinesiology (KIN)" },
+  { value: "KOREAN", label: "Korean (KOREAN)" },
+  { value: "LATIN", label: "Latin (LATIN)" },
+  { value: "LACS", label: "Latin American and Caribbean Studies (LACS)" },
+  { value: "LACUSL", label: "Latin American, Caribbean, and U.S. Latinx Studies (LACUSL)" },
+  { value: "LATINX", label: "Latinx Studies (LATINX)" },
+  { value: "LGBT", label: "Lesbian, Gay, Bisexual, and Transgender Studies (LGBT)" },
+  { value: "L&S HUM", label: "Letters and Science-Humanities (L&S HUM)" },
+  { value: "L&S NS", label: "Letters and Science-Natural Science (L&S NS)" },
+  { value: "L&S SS", label: "Letters and Science-Social Sciences (L&S SS)" },
+  { value: "LINGUIS", label: "Linguistics (LINGUIS)" },
+  { value: "MATLENG", label: "Materials Science and Engineering (MATLENG)" },
+  { value: "MATH", label: "Mathematical Sciences (MATH)" },
+  { value: "MTHSTAT", label: "Mathematical Statistics (MTHSTAT)" },
+  { value: "MECHENG", label: "Mechanical Engineering (MECHENG)" },
+  { value: "MIL SCI", label: "Military Science (MIL SCI)" },
+  { value: "MUSIC", label: "Music (MUSIC)" },
+  { value: "MUS ED", label: "Music Education (MUS ED)" },
+  { value: "MUSPERF", label: "Music Performance (MUSPERF)" },
+  { value: "NEURO", label: "Neuroscience (NEURO)" },
+  { value: "NONPROF", label: "Nonprofit Administration (NONPROF)" },
+  { value: "NURS", label: "Nursing (NURS)" },
+  { value: "NUTR", label: "Nutritional Sciences (NUTR)" },
+  { value: "OCCTHPY", label: "Occupational Therapy (OCCTHPY)" },
+  { value: "PEACEST", label: "Peace Studies (PEACEST)" },
+  { value: "PRPP", label: "Performance Rehabilitation and Performance Psychology (PRPP)" },
+  { value: "PHILOS", label: "Philosophy (PHILOS)" },
+  { value: "PT", label: "Physical Therapy (PT)" },
+  { value: "PHYSICS", label: "Physics (PHYSICS)" },
+  { value: "POLISH", label: "Polish (POLISH)" },
+  { value: "POL SCI", label: "Political Science (POL SCI)" },
+  { value: "PORTUGS", label: "Portuguese (PORTUGS)" },
+  { value: "PSYCH", label: "Psychology (PSYCH)" },
+  { value: "PUB ADM", label: "Public Administration (PUB ADM)" },
+  { value: "PH", label: "Public Health (PH)" },
+  { value: "RELIGST", label: "Religious Studies (RELIGST)" },
+  { value: "RUSSIAN", label: "Russian (RUSSIAN)" },
+  { value: "SOC WRK", label: "Social Work (SOC WRK)" },
+  { value: "SOCIOL", label: "Sociology (SOCIOL)" },
+  { value: "SPANISH", label: "Spanish (SPANISH)" },
+  { value: "MSP", label: "Sustainable Peacebuilding, Master of (MSP)" },
+  { value: "TCH LRN", label: "Teaching and Learning (TCH LRN)" },
+  { value: "THEATRE", label: "Theatre (THEATRE)" },
+  { value: "THERREC", label: "Therapeutic Recreation (THERREC)" },
+  { value: "TRNSLTN", label: "Translation and Interpreting (TRNSLTN)" },
+  { value: "URBPLAN", label: "Urban Planning (URBPLAN)" },
+  { value: "URB STD", label: "Urban Studies Program (URB STD)" },
+  { value: "UWS NSG", label: "UWS Collaborative Nursing Program (UWS NSG)" },
+  { value: "WGS", label: "Women's and Gender Studies (WGS)" },
+  { value: "WLC", label: "World Languages and Cultures (WLC)" }
+];
+
 function fileTypeLabel(mimeType) {
   if (!mimeType) return "File";
   if (mimeType === "application/pdf") return "PDF";
@@ -42,9 +191,11 @@ function PostBook() {
   const currentUser = getStoredUser();
 
   const [mode, setMode] = useState("book");
+  
+  // CHANGED: Replaced 'course_code' with 'course_dept' and 'course_num'
   const [formData, setFormData] = useState({
     title: "", author: "", edition: "", isbn: "",
-    course_code: "", book_condition: "Good", price: "", notes: "",
+    course_dept: "", course_num: "", book_condition: "Good", price: "", notes: "",
   });
 
   // Images stored as array of { file, previewUrl } — max 6
@@ -53,7 +204,8 @@ function PostBook() {
   const [error,        setError]        = useState("");
   const [successMessage, setSuccessMessage] = useState("");
 
-  const [notesData,         setNotesData]         = useState({ title: "", course_code: "", description: "" });
+  // CHANGED: Replaced 'course_code' with 'course_dept' and 'course_num'
+  const [notesData,         setNotesData]         = useState({ title: "", course_dept: "", course_num: "", description: "" });
   const [noteFile,          setNoteFile]           = useState(null);
   const [noteFileUploading, setNoteFileUploading]  = useState(false);
 
@@ -119,6 +271,9 @@ function PostBook() {
     if (!noteFile)               { setError("Please select a file."); return; }
     if (noteFile.size > 10 * 1024 * 1024) { setError("File too large. Maximum size is 10MB."); return; }
 
+    // CHANGED: Combine the selected department and typed number together
+    const finalCourseCode = [notesData.course_dept, notesData.course_num].filter(Boolean).join(" ").trim() || null;
+
     setSubmitting(true); setNoteFileUploading(true);
     try {
       const baseUrl = getApiBaseUrl();
@@ -136,7 +291,7 @@ function PostBook() {
         body: JSON.stringify({
           user_id: currentUser.id,
           title: notesData.title.trim(),
-          course_code: notesData.course_code.trim() || null,
+          course_code: finalCourseCode, // Uses the combined string
           description: notesData.description.trim() || null,
           file_url: publicUrl,
           file_type: noteFile.type,
@@ -164,6 +319,9 @@ function PostBook() {
     if (formData.price === "" || Number.isNaN(Number(formData.price))) { setError("Enter a valid price."); return; }
     if (Number(formData.price) < 0)                                    { setError("Price cannot be negative."); return; }
 
+    // CHANGED: Combine the selected department and typed number together
+    const finalCourseCode = [formData.course_dept, formData.course_num].filter(Boolean).join(" ").trim() || null;
+
     setSubmitting(true);
     try {
       const baseUrl = getApiBaseUrl();
@@ -174,7 +332,8 @@ function PostBook() {
           user_id: currentUser.id,
           title: formData.title.trim(), author: formData.author.trim(),
           edition: formData.edition.trim() || null, isbn: formData.isbn.trim() || null,
-          price: Number(formData.price), course_code: formData.course_code.trim() || null,
+          price: Number(formData.price), 
+          course_code: finalCourseCode, // Uses the combined string
           book_condition: formData.book_condition, notes: formData.notes.trim() || null,
           image_url: null,
         }),
@@ -268,6 +427,9 @@ function PostBook() {
           border-color: #FFBD00; background: #fff; box-shadow: 0 0 0 3px rgba(255,189,0,0.12);
         }
         .form-textarea { min-height: 100px; resize: vertical; }
+
+        /* CHANGED: New split layout class for Dept + Course Number */
+        .course-split { display: flex; gap: 8px; width: 100%; }
 
         /* ── Image upload zone (matches notes file zone) ── */
         .img-upload-zone {
@@ -384,10 +546,35 @@ function PostBook() {
                     <label className="form-label">ISBN</label>
                     <input className="form-input" type="text" name="isbn" placeholder="978-1260570798" value={formData.isbn} onChange={handleChange} />
                   </div>
+
+                  {/* CHANGED: Replaced Course Code text input with Dropdown + Number split */}
                   <div className="form-group">
-                    <label className="form-label">Course Code</label>
-                    <input className="form-input" type="text" name="course_code" placeholder="CompSci 361" value={formData.course_code} onChange={handleChange} />
+                    <label className="form-label">Course</label>
+                    <div className="course-split">
+                      <select 
+                        className="form-select" 
+                        name="course_dept" 
+                        value={formData.course_dept} 
+                        onChange={handleChange} 
+                        style={{ flex: 3 }}
+                      >
+                        <option value="">Department</option>
+                        {DEPARTMENT_OPTIONS.map((dept) => (
+                          <option key={dept.value} value={dept.value}>{dept.label}</option>
+                        ))}
+                      </select>
+                      <input 
+                        className="form-input" 
+                        type="text" 
+                        name="course_num" 
+                        placeholder="e.g. 315" 
+                        value={formData.course_num} 
+                        onChange={handleChange} 
+                        style={{ flex: 1 }} 
+                      />
+                    </div>
                   </div>
+
                   <div className="form-group">
                     <label className="form-label">Condition *</label>
                     <select className="form-select" name="book_condition" value={formData.book_condition} onChange={handleChange} required>
@@ -468,10 +655,35 @@ function PostBook() {
                     <label className="form-label">Title *</label>
                     <input className="form-input" type="text" name="title" placeholder="Exam 2 Study Guide" value={notesData.title} onChange={handleNotesChange} required />
                   </div>
+                  
+                  {/* CHANGED: Replaced Course Code text input with Dropdown + Number split */}
                   <div className="form-group form-full">
-                    <label className="form-label">Course Code</label>
-                    <input className="form-input" type="text" name="course_code" placeholder="CompSci 361" value={notesData.course_code} onChange={handleNotesChange} />
+                    <label className="form-label">Course</label>
+                    <div className="course-split">
+                      <select 
+                        className="form-select" 
+                        name="course_dept" 
+                        value={notesData.course_dept} 
+                        onChange={handleNotesChange} 
+                        style={{ flex: 3 }}
+                      >
+                        <option value="">Department</option>
+                        {DEPARTMENT_OPTIONS.map((dept) => (
+                          <option key={dept.value} value={dept.value}>{dept.label}</option>
+                        ))}
+                      </select>
+                      <input 
+                        className="form-input" 
+                        type="text" 
+                        name="course_num" 
+                        placeholder="e.g. 315" 
+                        value={notesData.course_num} 
+                        onChange={handleNotesChange} 
+                        style={{ flex: 1 }} 
+                      />
+                    </div>
                   </div>
+
                   <div className="form-group form-full">
                     <label className="form-label">Description</label>
                     <textarea className="form-textarea" name="description" placeholder="What's covered, which professor, semester, etc." value={notesData.description} onChange={handleNotesChange} />
