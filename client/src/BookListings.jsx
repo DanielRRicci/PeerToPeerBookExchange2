@@ -486,6 +486,48 @@ function BookListings() {
     }
   }
 
+  async function handleLike(note) {
+    if (!currentUser?.id || !note?.note_id) return;
+
+    setLikingIds((prev) => new Set(prev).add(note.note_id));
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/notes/${note.note_id}/like`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: currentUser.id }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Could not update note like.");
+
+      setLikedNoteIds((prev) => {
+        const next = new Set(prev);
+        if (data.liked) next.add(note.note_id);
+        else next.delete(note.note_id);
+        return next;
+      });
+
+      setBooks((prev) =>
+        prev.map((item) =>
+          item._type === "notes" && item.note_id === note.note_id
+            ? { ...item, like_count: Number(data.like_count || 0) }
+            : item
+        )
+      );
+    } catch (err) {
+      console.error("Like toggle error:", err);
+      alert(err.message || "Could not update note like.");
+    } finally {
+      setLikingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(note.note_id);
+        return next;
+      });
+    }
+  }
+
   // ── render ───────────────────────────────────────────────────────────────
   return (
     <>
