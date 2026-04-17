@@ -338,6 +338,50 @@ router.post('/users/:id/make-admin', requireAuth, requireAdmin, async (req, res)
   }
 });
 
+/**
+ * GET /api/admin/reports
+ * Returns report tickets oldest -> newest.
+ */
+router.get('/reports', requireAuth, requireAdmin, async (req, res) => {
+  const db = req.app.get('db');
+
+  try {
+    const [rows] = await db.query(`
+      SELECT
+        r.report_id,
+        r.reporter_id,
+        r.reported_user_id,
+        r.listing_id,
+        r.reason_type,
+        r.reason_text,
+        r.status,
+        r.reviewed_by,
+        r.reviewed_at,
+        r.admin_notes,
+        r.created_at,
+
+        reporter.full_name AS reporter_name,
+        reporter.email AS reporter_email,
+
+        reported.full_name AS reported_user_name,
+        reported.email AS reported_user_email,
+
+        bl.title AS listing_title,
+        bl.status AS listing_status
+      FROM Reports r
+      LEFT JOIN Users reporter ON reporter.user_id = r.reporter_id
+      LEFT JOIN Users reported ON reported.user_id = r.reported_user_id
+      LEFT JOIN BookListings bl ON bl.listing_id = r.listing_id
+      ORDER BY r.created_at ASC
+    `);
+
+    res.json(rows);
+  } catch (err) {
+    console.error('[GET admin reports]', err);
+    res.status(500).json({ error: 'Failed to fetch reports.' });
+  }
+});
+
 // ═════════════════════════════════════════════════════════════════════════════
 // ADMIN-ONLY: MODERATION LOG
 // ═════════════════════════════════════════════════════════════════════════════

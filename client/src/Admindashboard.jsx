@@ -244,7 +244,7 @@ function Section({ title, badge, children, action }) {
   );
 }
 
-const TABS = ["Overview", "Listings", "Users", "Moderation Log"];
+const TABS = ["Overview", "Listings", "Users", "Reports", "Moderation Log"];
 
 // ─── Main component ───────────────────────────────────────────────────────────
 export default function AdminDashboard() {
@@ -262,11 +262,13 @@ export default function AdminDashboard() {
   const [modLog,        setModLog]        = useState([]);
   const [allListings,   setAllListings]   = useState([]);
   const [allUsers,      setAllUsers]      = useState([]);
+  const [reports,       setReports]       = useState([]);
   const [listingFilter, setListingFilter] = useState("All");
   const [loadingStats,  setLoadingStats]  = useState(true);
   const [loadingLog,    setLoadingLog]    = useState(false);
   const [loadingList,   setLoadingList]   = useState(false);
   const [loadingUsers,  setLoadingUsers]  = useState(false);
+  const [loadingReports,setLoadingReports]= useState(false);
   const [actionNote,    setActionNote]    = useState("");
   const [confirmTarget, setConfirmTarget] = useState(null);
 
@@ -312,6 +314,15 @@ export default function AdminDashboard() {
     setLoadingUsers(false);
   }, []);
 
+   const loadReports = useCallback(async () => {
+    setLoadingReports(true);
+    try {
+      const res = await fetch(`${baseUrl}/api/admin/reports`, { headers });
+      if (res.ok) setReports(await res.json());
+    } catch { }
+    setLoadingReports(false);
+  }, [baseUrl, currentUser?.id]);
+
   useEffect(() => { loadStats(); loadModLog(); }, []);
   useEffect(() => {
     if (activeTab === "Listings") {
@@ -321,6 +332,7 @@ export default function AdminDashboard() {
   }, [activeTab, listingFilter, loadListings, loadStats]);
   useEffect(() => { if (activeTab === "Users")          loadUsers();    }, [activeTab]);
   useEffect(() => { if (activeTab === "Moderation Log") loadModLog();   }, [activeTab]);
+  useEffect(() => { if (activeTab === "Reports")        loadReports();  }, [activeTab, loadReports]);
 
   useEffect(() => {
     async function refreshVisibleData() {
@@ -329,6 +341,7 @@ export default function AdminDashboard() {
       if (activeTab === "Listings") await loadListings();
       if (activeTab === "Users") await loadUsers();
       if (activeTab === "Moderation Log") await loadModLog();
+      if (activeTab === "Reports") await loadReports();
     }
 
     const handleVisibility = () => { refreshVisibleData(); };
@@ -341,14 +354,17 @@ export default function AdminDashboard() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [activeTab, loadListings, loadModLog, loadStats, loadUsers]);
+  }, [activeTab, loadListings, loadModLog, loadReports, loadStats, loadUsers]);
 
   async function approveListing(id) {
     await fetch(`${baseUrl}/api/admin/listings/${id}/approve`, {
       method: "POST", headers, body: JSON.stringify({ userId: currentUser?.id }),
     });
     setAllListings((prev) => prev.map((l) => l.listing_id === id ? { ...l, status: "Active" } : l));
-    loadStats();
+    await loadStats();
+    if (activeTab === "Listings") await loadListings();
+    if (activeTab === "Reports") await loadReports();
+    if (activeTab === "Moderation Log") await loadModLog();
     setConfirmTarget(null);
   }
 
@@ -358,7 +374,10 @@ export default function AdminDashboard() {
       body: JSON.stringify({ status, notes: actionNote, userId: currentUser?.id }),
     });
     setAllListings((prev) => prev.map((l) => l.listing_id === id ? { ...l, status } : l));
-    loadStats();
+    await loadStats();
+    if (activeTab === "Listings") await loadListings();
+    if (activeTab === "Reports") await loadReports();
+    if (activeTab === "Moderation Log") await loadModLog();
     setConfirmTarget(null);
     setActionNote("");
   }
@@ -369,6 +388,10 @@ export default function AdminDashboard() {
       body: JSON.stringify({ reason: actionNote, userId: currentUser?.id }),
     });
     setAllUsers((prev) => prev.map((u) => u.user_id === id ? { ...u, is_suspended: true } : u));
+    await loadStats();
+    if (activeTab === "Users") await loadUsers();
+    if (activeTab === "Reports") await loadReports();
+    if (activeTab === "Moderation Log") await loadModLog();
     setConfirmTarget(null);
     setActionNote("");
   }
@@ -392,6 +415,7 @@ export default function AdminDashboard() {
   const pendingCount = Number(stats?.listings?.pending       || 0);
   const reviewCount  = Number(stats?.listings?.under_review  || 0);
   const urgentCount  = pendingCount + reviewCount;
+  const openReportsCount = reports.filter(r => r.status === "Open").length;
 
   return (
     <>
@@ -613,6 +637,9 @@ export default function AdminDashboard() {
               {tab}
               {tab === "Listings" && urgentCount > 0 && (
                 <span className="tab-badge">{urgentCount}</span>
+              )}
+              {tab === "Reports" && openReportsCount > 0 && (
+                <span className="tab-badge red">{openReportsCount}</span>
               )}
             </div>
           ))}
@@ -982,7 +1009,104 @@ export default function AdminDashboard() {
               )}
             </Section>
           )}
+          {/* ── REPORTS ─────────────────────────────────────────────────── */}
+          {activeTab === "Reports" && (
+            <Section title="Report Tickets" badge={reports.length}>
+              {loadingReports ? (
+                <div style={{ textAlign: "center", padding: 24 }}>
+                  <div className="spinner" />
+                </div>
+              ) : reports.length === 0 ? (
+                <div className="empty-msg">No reports found.</div>
+              ) : (
+                <div style={{ overflowX: "auto" }}>
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Reported User</th>
+                        <th>Listing</th>
+                        <th>Reason</th>
+                        <th>Date</th>
+                        <th>Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reports.map((r) => (
+                        <tr key={r.report_id}>
+                          <td>
+                            <div style={{ fontWeight: 700 }}>
+                              {r.reported_user_name || "Unknown"}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#aaa" }}>
+                              {r.reported_user_email || "—"}
+                            </div>
+                          </td>
 
+                          <td>
+                            <div style={{ fontWeight: 600 }}>
+                              {r.listing_title || "No listing"}
+                            </div>
+                            <div style={{ fontSize: 11, color: "#aaa" }}>
+                              {r.listing_status || "—"}
+                            </div>
+                          </td>
+
+                          <td>
+                            <div style={{ fontWeight: 600 }}>{r.reason_type || "No reason"}</div>
+                            <div style={{ fontSize: 11, color: "#aaa", marginTop: 2 }}>
+                              {r.details || ""}
+                            </div>
+                          </td>
+
+                          <td style={{ fontSize: 12, color: "#aaa" }}>
+                            {relativeTime(r.created_at)}
+                          </td>
+
+                          <td>
+                            <div className="action-group">
+                              {r.reported_user_id && (
+                                <button
+                                  className="tbl-btn tbl-btn-suspend"
+                                  onClick={() =>
+                                    setConfirmTarget({
+                                      type: "suspend",
+                                      id: r.reported_user_id,
+                                      label: r.reported_user_name || "this user",
+                                      action: () => suspendUser(r.reported_user_id),
+                                      needsNote: true,
+                                    })
+                                  }
+                                >
+                                  ⛔ Suspend
+                                </button>
+                              )}
+
+                              {r.listing_id && (
+                                <button
+                                  className="tbl-btn tbl-btn-remove"
+                                  onClick={() =>
+                                    setConfirmTarget({
+                                      type: "remove",
+                                      id: r.listing_id,
+                                      label: r.listing_title || "this listing",
+                                      action: () => setListingStatus(r.listing_id, "Removed"),
+                                      needsNote: true,
+                                    })
+                                  }
+                                >
+                                  Remove Listing
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </Section>
+          )}
           {/* ── MODERATION LOG ───────────────────────────────────────────── */}
           {activeTab === "Moderation Log" && (
             <Section
