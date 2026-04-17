@@ -1176,6 +1176,55 @@ app.get("/api/blocks/status", requireAuth, async (req, res, next) => {
   }
 });
 
+app.get("/api/blocks", requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.currentUser.user_id);
+
+    const rows = await runQuery(
+      `SELECT
+         ub.blocked_id,
+         ub.created_at,
+         u.full_name,
+         u.email,
+         u.profile_image_url
+       FROM UserBlocks ub
+       JOIN Users u ON u.user_id = ub.blocked_id
+       WHERE ub.blocker_id = ?
+       ORDER BY ub.created_at DESC`,
+      [currentUserId]
+    );
+
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.delete("/api/blocks/:blockedId", requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.currentUser.user_id);
+    const blockedId = Number(req.params.blockedId);
+
+    if (!blockedId) {
+      return res.status(400).json({ error: "blockedId is required." });
+    }
+
+    const result = await runQuery(
+      `DELETE FROM UserBlocks
+       WHERE blocker_id = ? AND blocked_id = ?`,
+      [currentUserId, blockedId]
+    );
+
+    if (!result.affectedRows) {
+      return res.status(404).json({ error: "Blocked user not found." });
+    }
+
+    res.json({ success: true, message: "User unblocked successfully." });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.post("/api/blocks", requireAuth, async (req, res, next) => {
   try {
     const blockerId = Number(req.currentUser.user_id);

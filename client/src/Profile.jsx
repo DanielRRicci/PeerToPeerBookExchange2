@@ -66,6 +66,9 @@ function Profile() {
     listing_id: null, title: "", author: "", edition: "",
     isbn: "", course_code: "", book_condition: "", price: "", notes: "", status: "Active",
   });
+  const [blockedUsers,    setBlockedUsers]    = useState([]);
+  const [loadingBlocks,   setLoadingBlocks]   = useState(true);
+  const [unblockingIds,   setUnblockingIds]   = useState(new Set());
 
   const currentUser = getStoredUser();
   const isAdmin = currentUser?.role === "admin";
@@ -75,10 +78,28 @@ function Profile() {
     if (!stored) return;
     const { id: userId } = JSON.parse(stored);
     if (!userId) return;
+
     const baseUrl = getApiBaseUrl();
-    fetch(`${baseUrl}/api/users/${userId}`).then((r) => r.json()).then(setUser);
-    fetch(`${baseUrl}/api/listings?userId=${userId}`).then((r) => r.json()).then((d) => setListings(Array.isArray(d) ? d : []));
-    fetch(`${baseUrl}/Notes?userId=${userId}`).then((r) => r.json()).then((d) => setNotes(Array.isArray(d) ? d : []));
+
+    fetch(`${baseUrl}/api/users/${userId}`)
+      .then((r) => r.json())
+      .then(setUser);
+
+    fetch(`${baseUrl}/api/listings?userId=${userId}`)
+      .then((r) => r.json())
+      .then((d) => setListings(Array.isArray(d) ? d : []));
+
+    fetch(`${baseUrl}/Notes?userId=${userId}`)
+      .then((r) => r.json())
+      .then((d) => setNotes(Array.isArray(d) ? d : []));
+
+    fetch(`${baseUrl}/api/blocks`, {
+      headers: { "x-user-id": userId },
+    })
+      .then((r) => r.json())
+      .then((d) => setBlockedUsers(Array.isArray(d) ? d : []))
+      .catch(() => setBlockedUsers([]))
+      .finally(() => setLoadingBlocks(false));
   }, []);
 
   useEffect(() => {
@@ -315,6 +336,33 @@ function Profile() {
     setNotes((prev) => prev.filter((n) => n.note_id !== id));
   }
 
+  async function handleUnblock(blockedId) {
+    if (!blockedId || unblockingIds.has(blockedId)) return;
+
+    setUnblockingIds((prev) => new Set(prev).add(blockedId));
+
+    try {
+      const baseUrl = getApiBaseUrl();
+      const res = await fetch(`${baseUrl}/api/blocks/${blockedId}`, {
+        method: "DELETE",
+        headers: { "x-user-id": currentUser?.id },
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not unblock user.");
+
+      setBlockedUsers((prev) => prev.filter((u) => u.blocked_id !== blockedId));
+    } catch (err) {
+      alert(err.message || "Could not unblock user.");
+    } finally {
+      setUnblockingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(blockedId);
+        return next;
+      });
+    }
+  }
+
   if (!user)
     return (
       <>
@@ -422,6 +470,97 @@ function Profile() {
         .profile-email { font-size: 13px; color: rgba(255,255,255,0.4); }
 
         .profile-card-body { padding: 24px 28px 28px; }
+
+        .profile-section {
+          margin-top: 24px;
+          padding-top: 20px;
+          border-top: 1px solid #f0f0f0;
+        }
+
+        .profile-section-title {
+          font-family: 'Bebas Neue', sans-serif;
+          font-size: 24px;
+          letter-spacing: 1.5px;
+          color: #0a0a0a;
+          margin-bottom: 14px;
+        }
+
+        .blocked-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
+        }
+
+        .blocked-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          padding: 12px 14px;
+          border: 1px solid #ececec;
+          border-radius: 12px;
+          background: #fafafa;
+        }
+
+        .blocked-user-left {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          min-width: 0;
+        }
+
+        .blocked-avatar {
+          width: 46px;
+          height: 46px;
+          border-radius: 50%;
+          object-fit: cover;
+          border: 2px solid #FFBD00;
+          flex-shrink: 0;
+        }
+
+        .blocked-name {
+          font-size: 14px;
+          font-weight: 700;
+          color: #0a0a0a;
+        }
+
+        .blocked-meta {
+          font-size: 12px;
+          color: #888;
+          margin-top: 2px;
+        }
+
+        .blocked-unblock-btn {
+          border: none;
+          border-radius: 999px;
+          padding: 8px 14px;
+          background: #0a0a0a;
+          color: #FFBD00;
+          font-size: 11px;
+          font-weight: 700;
+          letter-spacing: 1px;
+          text-transform: uppercase;
+          cursor: pointer;
+          flex-shrink: 0;
+          transition: background 0.15s, transform 0.15s;
+        }
+
+        .blocked-unblock-btn:hover:not(:disabled) {
+          background: #222;
+          transform: translateY(-1px);
+        }
+
+        .blocked-unblock-btn:disabled {
+          opacity: 0.7;
+          cursor: default;
+          transform: none;
+        }
+
+        .blocked-empty {
+          color: #888;
+          font-size: 13px;
+          padding: 10px 0 4px;
+        }
 
         .account-section {
           margin-top: 4px; padding: 18px; border: 1.5px solid #f0f0f0;
@@ -787,6 +926,53 @@ function Profile() {
                 </div>
               </div>
             ))}
+
+            <div className="profile-section">
+              <div className="profile-section-title">Current Block List</div>
+
+              {loadingBlocks ? (
+                <div className="blocked-empty">Loading blocked users…</div>
+              ) : blockedUsers.length === 0 ? (
+                <div className="blocked-empty">You have not blocked anyone.</div>
+              ) : (
+                <div className="blocked-list">
+                  {blockedUsers.map((blockedUser) => {
+                    const avatar =
+                      blockedUser.profile_image_url ||
+                      `https://ui-avatars.com/api/?name=${encodeURIComponent(blockedUser.full_name)}&background=FFBD00&color=000&size=80`;
+
+                    return (
+                      <div key={blockedUser.blocked_id} className="blocked-row">
+                        <div className="blocked-user-left">
+                          <img
+                            src={avatar}
+                            alt={blockedUser.full_name}
+                            className="blocked-avatar"
+                          />
+                          <div>
+                            <div className="blocked-name">{blockedUser.full_name}</div>
+                            <div className="blocked-meta">
+                              Blocked{" "}
+                              {blockedUser.created_at
+                                ? new Date(blockedUser.created_at).toLocaleDateString()
+                                : "recently"}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          className="blocked-unblock-btn"
+                          onClick={() => handleUnblock(blockedUser.blocked_id)}
+                          disabled={unblockingIds.has(blockedUser.blocked_id)}
+                        >
+                          {unblockingIds.has(blockedUser.blocked_id) ? "Unblocking..." : "Unblock"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
 
             <div style={{ textAlign: "center" }}>
               <Link to="/booklistings" className="profile-back">
