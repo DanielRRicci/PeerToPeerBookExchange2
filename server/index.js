@@ -273,6 +273,40 @@ function buildPublicImageUrl(objectKey) {
   return `${base}/${objectKey}`;
 }
 
+async function areUsersBlockedEitherWay(userA, userB) {
+  if (!userA || !userB) return false;
+
+  const rows = await runQuery(
+    `SELECT block_id
+     FROM UserBlocks
+     WHERE (blocker_id = ? AND blocked_id = ?)
+        OR (blocker_id = ? AND blocked_id = ?)
+     LIMIT 1`,
+    [userA, userB, userB, userA]
+  );
+
+  return rows.length > 0;
+}
+
+async function getBlockStatusBetweenUsers(currentUserId, otherUserId) {
+  const rows = await runQuery(
+    `SELECT blocker_id, blocked_id
+     FROM UserBlocks
+     WHERE (blocker_id = ? AND blocked_id = ?)
+        OR (blocker_id = ? AND blocked_id = ?)`,
+    [currentUserId, otherUserId, otherUserId, currentUserId]
+  );
+
+  const blockedByYou = rows.some(
+    (row) => Number(row.blocker_id) === Number(currentUserId)
+  );
+
+  return {
+    blockedByYou,
+    blockedEitherWay: rows.length > 0,
+  };
+}
+
 const app = express();
 
 const allowedOrigins = [
@@ -498,7 +532,7 @@ app.post("/BookListings", async (req, res, next) => {
     const [result] = await pool.execute(
       `INSERT INTO BookListings
        (user_id, title, author, \`Edition\`, isbn, price, course_code, book_condition, notes, status, requires_admin_review, image_url)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Pending', TRUE, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Active', TRUE, ?)`,
       [user_id, cleanedTitle, cleanedAuthor, cleanedEdition, cleanedIsbn,
        numericPrice, cleanedCourseCode, cleanedCondition, cleanedNotes, image_url || null]
     );
@@ -1124,6 +1158,168 @@ app.put("/api/messages/read", async (req, res, next) => {
     );
     res.json({ success: true });
   } catch (err) { next(err); }
+});
+
+app.get("/api/blocks/status", requireAuth, async (req, res, next) => {
+  try {
+    const currentUserId = Number(req.currentUser.user_id);
+    const otherUserId = Number(req.query.otherUserId);
+
+    if (!otherUserId) {
+      return res.status(400).json({ error: "otherUserId is required." });
+    }
+
+    const status = await getBlockStatusBetweenUsers(currentUserId, otherUserId);
+    res.json(status);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/blocks", requireAuth, async (req, res, next) => {
+  try {
+    const blockerId = Number(req.currentUser.user_id);
+    const blockedId = Number(req.body.blockedId);
+
+    if (!blockedId) {
+      return res.status(400).json({ error: "blockedId is required." });
+    }
+
+    if (blockerId === blockedId) {
+      return res.status(400).json({ error: "You cannot block yourself." });
+    }
+
+    await runQuery(
+      `INSERT INTO UserBlocks (blocker_id, blocked_id)
+       VALUES (?, ?)
+       ON DUPLICATE KEY UPDATE blocker_id = blocker_id`,
+      [blockerId, blockedId]
+    );
+
+    res.status(201).json({
+      success: true,
+      blockedByYou: true,
+      blockedEitherWay: true,
+      message: "User blocked successfully.",
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.get("/api/reports/status", requireAuth, async (req, res, next) => {
+  try {
+    const reporterId = Number(req.currentUser.user_id);
+    const reportedUserId = Number(req.query.reportedUserId);
+
+    if (!reportedUserId) {
+      return res.status(400).json({ error: "reportedUserId is required." });
+    }
+
+    const rows = await runQuery(
+      `SELECT report_id
+       FROM Reports
+       WHERE reporter_id = ? AND reported_user_id = ?
+       LIMIT 1`,
+      [reporterId, reportedUserId]
+    );
+
+    res.json({ reported: rows.length > 0 });
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/reports", requireAuth, async (req, res, next) => {
+  try {
+    const reporterId = Number(req.currentUser.user_id);
+    const { reportedUserId, listingId, reasonType, reasonText } = req.body;
+
+    const validReasonTypes = [
+      "Inappropriate messages",
+      "Inappropriate listings",
+      "Message spam",
+      "Inappropriate name",
+      "Other",
+    ];
+
+    if (!reportedUserId || !reasonType || !String(reasonText || "").trim()) {
+      return res.status(400).json({
+        error: "reportedUserId, reasonType, and reasonText are required.",
+      });
+    }
+
+    if (!validReasonTypes.includes(reasonType)) {
+      return res.status(400).json({ error: "Invalid reason type." });
+    }
+
+    const existing = await runQuery(
+      `SELECT report_id
+       FROM Reports
+       WHERE reporter_id = ? AND reported_user_id = ?
+       LIMIT 1`,
+      [reporterId, Number(reportedUserId)]
+    );
+
+    if (existing.length > 0) {
+      return res.status(200).json({
+        success: true,
+        alreadyReported: true,
+        message: "User has already been reported.",
+      });
+    }
+
+    await runQuery(
+      `INSERT INTO Reports
+       (reporter_id, reported_user_id, listing_id, reason_type, reason_text, status)
+       VALUES (?, ?, ?, ?, ?, 'Open')`,
+      [
+        reporterId,
+        Number(reportedUserId),
+        listingId ? Number(listingId) : null,
+        reasonType,
+        String(reasonText).trim(),
+      ]
+    );
+
+    if (reasonType === "Inappropriate listings" && listingId) {
+      await runQuery(
+        `UPDATE BookListings
+        SET status = 'Pending', requires_admin_review = TRUE
+        WHERE listing_id = ?`,
+        [Number(listingId)]
+      );
+    }
+
+    const [reportedUser] = await runQuery(
+      `SELECT full_name
+      FROM Users
+      WHERE user_id = ?
+      LIMIT 1`,
+      [Number(reportedUserId)]
+    );
+
+    const reportedName = reportedUser?.full_name || "that user";
+
+    await runQuery(
+      `INSERT INTO Notifications (user_id, type, message, listing_id, is_read)
+      VALUES (?, ?, ?, ?, FALSE)`,
+      [
+        reporterId,
+        "report",
+        `Thanks for your report on ${reportedName} - it’s been received. We’ll review it as soon as possible. Thank you for helping keep Peer Exchange safe.`,
+        listingId ? Number(listingId) : null,
+      ]
+    );
+
+    res.status(201).json({
+      success: true,
+      alreadyReported: false,
+      message: "Report submitted.",
+    });
+  } catch (err) {
+    next(err);
+  }
 });
 
 // ── Error handler ─────────────────────────────────────────────────────────────
