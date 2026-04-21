@@ -857,7 +857,7 @@ function BookListings() {
                       <div className="book-card-img-notes">{label}</div>
                     ) : (
                       <img
-                        src={book.image_url || "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=1000"}
+                        src={book.image_url || "https://img.icons8.com/color/512/book.png"}
                         alt={book.title}
                         className="book-card-img"
                       />

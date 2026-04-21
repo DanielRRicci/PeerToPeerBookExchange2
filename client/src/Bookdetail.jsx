@@ -3,7 +3,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getApiBaseUrl } from "./apiBaseUrl";
 
 const FALLBACK_IMG =
-  "https://images.unsplash.com/photo-1544947950-fa07a98d237f?auto=format&fit=crop&q=80&w=800";
+  "https://img.icons8.com/color/512/book.png";
 
 function conditionColor(cond) {
   switch ((cond || "").toLowerCase()) {
