@@ -12,8 +12,7 @@ export default function Register() {
   const navigate = useNavigate();
 
   async function handleSubmit(e) {
-    e.preventDefault();
-    setError("");
+  if (e) e.preventDefault();
 
     if (!fullName.trim()) { setError("Please enter your full name."); return; }
     if (!email.trim()) { setError("Please enter your email."); return; }
@@ -188,7 +187,7 @@ export default function Register() {
 
               {error && <div className="reg-error">{error}</div>}
 
-              <button type="submit" className="reg-btn" disabled={loading}>
+              <button type="button" className="reg-btn" disabled={loading}>
                 {loading ? "Creating Account…" : "Join the Exchange"}
               </button>
             </form>
