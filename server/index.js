@@ -1,5 +1,5 @@
 // server/index.js
-require("dotenv").config({ path: '../client/.env' });
+require("dotenv").config();
 const express = require("express");
 const cors = require("cors");
 const pool = require("./db");
