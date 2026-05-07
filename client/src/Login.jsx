@@ -50,7 +50,6 @@ export default function Login() {
       setStoredUser(data.user); navigate("/booklistings");
     } catch { setLoginError("Could not reach server."); }
   }
-
   async function handleRegister(e) {
     e.preventDefault(); setRegError("");
     if (!regData.fullName.trim()) { setRegError("Please enter your full name."); return; }
@@ -364,7 +363,6 @@ export default function Login() {
                 <button type="submit" className="submit-btn">Join the Exchange</button>
               </form>
             </div>
-
           </div>
         </div>
       </div>
