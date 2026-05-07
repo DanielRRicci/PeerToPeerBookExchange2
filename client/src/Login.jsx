@@ -403,7 +403,7 @@ export default function Login() {
                 <div className="uwm-tag">New here?</div>
                 <div className="panel-heading">Hello, Panther!</div>
                 <p className="panel-text">Register with your UWM email to buy and sell textbooks with fellow students.</p>
-                <button className="panel-btn" onClick={() => !animating && flipTo(1)}>
+                <button className="panel-btn" onClick={() => window.location.href = "/register"}>
                   Register
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{marginLeft: "4px"}}>
                     <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
