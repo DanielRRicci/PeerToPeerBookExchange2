@@ -9,7 +9,10 @@ export default function Login() {
   const [regData,    setRegData]    = useState({ fullName: "", email: "", password: "", confirmPassword: "" });
   const [regError,   setRegError]   = useState("");
 
-  const [progress,  setProgress]  = useState(0); // 0 = login, 1 = register
+  const [tosAccepted, setTosAccepted] = useState(false);
+  const [showTos, setShowTos] = useState(false);
+
+  const [progress,  setProgress]  = useState(0); 
   const [animating, setAnimating] = useState(false);
   const rafRef = useRef(null);
   const navigate = useNavigate();
@@ -34,9 +37,17 @@ export default function Login() {
 
   async function handleLogin(e) {
     e.preventDefault();
+    setLoginError("");
+
+    // NEW: Manual validation to prevent silent failures
+    if (!loginData.email.trim() || !loginData.password) {
+      setLoginError("Please enter your email and password.");
+      return;
+    }
+
     const email = loginData.email.trim().toLowerCase();
     if (!email.endsWith("@uwm.edu")) { setLoginError("Please use your UWM email (@uwm.edu)"); return; }
-    setLoginError("");
+    
     try {
       const res  = await fetch(`${getApiBaseUrl()}/api/login`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -50,26 +61,38 @@ export default function Login() {
       setStoredUser(data.user); navigate("/booklistings");
     } catch { setLoginError("Could not reach server."); }
   }
+
   async function handleRegister(e) {
-    e.preventDefault(); setRegError("");
-    if (!regData.fullName.trim()) { setRegError("Please enter your full name."); return; }
-    if (!regData.email.trim()) { setRegError("Please enter your email."); return; }
-    if (!regData.password) { setRegError("Please enter a password."); return; }
+    e.preventDefault(); 
+    setRegError("");
+
+    // NEW: Manual field validation to replace the buggy HTML5 "required" popups
+    if (!regData.fullName.trim() || !regData.email.trim() || !regData.password || !regData.confirmPassword) {
+      setRegError("Please fill out all required fields.");
+      return;
+    }
+
+    if (!tosAccepted) { 
+      setRegError("You must read and accept the Terms of Service to register."); 
+      return; 
+    }
+    
     if (regData.password !== regData.confirmPassword) { setRegError("Passwords do not match!"); return; }
     if (!regData.email.trim().toLowerCase().endsWith("@uwm.edu")) { setRegError("Please use your UWM email (@uwm.edu)"); return; }
+    
     try {
-      const res = await fetch(`${getApiBaseUrl()}/api/register`, {
+      const res  = await fetch(`${getApiBaseUrl()}/api/register`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ fullName: regData.fullName, email: regData.email.trim().toLowerCase(), password: regData.password }),
       });
       const data = await res.json();
-      if (res.ok) window.location.href = "/verify-email";
+      if (res.ok) navigate("/verify-email", { state: { email: regData.email.trim().toLowerCase() } });
       else setRegError(data.error || data.message || "Registration failed");
     } catch { setRegError("Could not connect to server."); }
   }
 
-  const angle      = progress * -180;
-  const showFront  = angle > -90;
+  const angle     = progress * -180;
+  const showFront = angle > -90; 
   const turnShadow = Math.sin(progress * Math.PI);
 
   return (
@@ -101,7 +124,6 @@ export default function Login() {
           background-size: 60px 60px;
         }
 
-        /* ── The book shell ── */
         .book {
           position: relative; z-index: 1;
           width: 860px; max-width: 98vw; height: 540px;
@@ -110,7 +132,6 @@ export default function Login() {
           overflow: visible;
         }
 
-        /* ── Static left half: Sign In ── */
         .half-left {
           position: absolute;
           left: 0; top: 0;
@@ -145,7 +166,6 @@ export default function Login() {
           border-radius: 50%; background: rgba(0,0,0,0.06); pointer-events: none;
         }
 
-        /* ── The flipping page — RIGHT HALF ONLY, hinges on its left edge ── */
         .flip-page {
           position: absolute;
           top: 0; left: 50%;
@@ -172,7 +192,9 @@ export default function Login() {
           padding: 48px 36px; text-align: center;
           pointer-events: none;
         }
-        .face-front.active { pointer-events: all; }
+        .face-front.active {
+          pointer-events: all;
+        }
         .face-front::before {
           content: ''; position: absolute;
           top: -70px; right: -70px; width: 240px; height: 240px;
@@ -184,7 +206,6 @@ export default function Login() {
           border-radius: 50%; background: rgba(0,0,0,0.06); pointer-events: none;
         }
 
-        /* BACK face: white register form */
         .face-back {
           transform: rotateY(180deg);
           background: #fff;
@@ -194,9 +215,10 @@ export default function Login() {
           border-radius: 20px 0 0 20px;
           pointer-events: none;
         }
-        .face-back.active { pointer-events: all; }
+        .face-back.active {
+          pointer-events: all;
+        }
 
-        /* Spine crease */
         .spine-center {
           position: absolute; top:0; bottom:0;
           left: 0; width: 5px;
@@ -249,12 +271,91 @@ export default function Login() {
           transition: background 0.2s, transform 0.15s;
         }
         .submit-btn:hover { background: #222; transform: translateY(-1px); }
+
+        .tos-group {
+          display: flex; align-items: center; gap: 8px; margin-bottom: 14px; margin-top: 4px;
+        }
+        .tos-group input[type="checkbox"] {
+          width: 16px; height: 16px; cursor: pointer; accent-color: #FFBD00;
+        }
+        .tos-group label {
+          font-size: 12px; color: #555; text-transform: none; letter-spacing: normal; margin-bottom: 0; font-weight: 500; cursor: pointer;
+        }
+        .tos-link {
+          background: none; border: none; padding: 0; color: #0a0a0a; font-weight: 700; text-decoration: underline; text-decoration-color: #FFBD00; cursor: pointer; font-family: inherit; font-size: 12px; transition: color 0.2s;
+        }
+        .tos-link:hover { color: #c97d00; }
+
+        .modal-overlay {
+          position: fixed; inset: 0; background: rgba(0,0,0,0.75);
+          display: flex; align-items: center; justify-content: center;
+          z-index: 9999; padding: 20px;
+        }
+        .modal-card {
+          width: 100%; max-width: 600px; background: #fff;
+          border-radius: 16px; overflow: hidden;
+          box-shadow: 0 20px 60px rgba(0,0,0,0.35);
+          border-top: 6px solid #FFBD00;
+        }
+        .modal-header {
+          background: #0a0a0a; padding: 20px 24px; border-bottom: 2px solid #FFBD00;
+        }
+        .modal-title {
+          font-family: 'Bebas Neue', sans-serif; font-size: 26px; letter-spacing: 2px; color: #FFBD00; margin: 0;
+        }
+        .modal-body { padding: 24px; }
+        .tos-content {
+          max-height: 350px; overflow-y: auto; font-size: 13px; color: #444; line-height: 1.6;
+          padding-right: 10px; margin-bottom: 20px;
+        }
+        .tos-content h4 { color: #0a0a0a; margin-top: 16px; margin-bottom: 4px; font-size: 14px; }
+        .tos-content h4:first-child { margin-top: 0; }
+        .modal-save {
+          width: 100%; background: #FFBD00; color: #0a0a0a; border: none;
+          padding: 12px; border-radius: 8px; font-weight: 700; font-size: 15px;
+          cursor: pointer; transition: background 0.15s;
+        }
+        .modal-save:hover { background: #e6a800; }
       `}</style>
+
+      {showTos && (
+        <div className="modal-overlay" onClick={() => setShowTos(false)}>
+          <div className="modal-card" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Terms of Service</h2>
+            </div>
+            <div className="modal-body">
+              <div className="tos-content">
+                <h4>1. Acceptance of Terms</h4>
+                <p>By creating an account, you agree to abide by these terms. This platform is intended exclusively for current students of the University of Wisconsin-Milwaukee.</p>
+                
+                <h4>2. User Conduct & Content</h4>
+                <p>You agree to use this platform strictly for lawful purposes. Harassment, fraud, spam, or posting inappropriate, offensive, or illegal content is strictly prohibited.</p>
+                
+                <h4>3. Transactions & Liability</h4>
+                <p>The UWM Student Marketplace acts solely as a bulletin board to connect buyers and sellers. We do not handle payments, shipping, or guarantee the condition, safety, or legality of any items listed. All transactions are made at your own risk. The creators of this platform and UWM are not liable for any disputes or losses.</p>
+
+                <h4>4. Academic Integrity</h4>
+                <p>You may not upload, buy, sell, or request materials that violate UWM's academic integrity policies. This includes, but is not limited to, completed exams, answer keys, or materials explicitly forbidden by your instructors.</p>
+
+                <h4>5. Account Termination</h4>
+                <p>We reserve the right to suspend or permanently terminate accounts that violate these rules or engage in suspicious activity without prior notice.</p>
+              </div>
+              <button 
+                type="button" 
+                className="modal-save" 
+                onClick={() => { setTosAccepted(true); setShowTos(false); }}
+              >
+                I Accept & Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div className="auth-page">
         <div className="book">
 
-          {/* Static login form */}
           <div
             className="half-left"
             style={{
@@ -263,18 +364,20 @@ export default function Login() {
           >
             <div className="eyebrow">UWM Student Marketplace</div>
             <div className="f-heading">Sign In</div>
-            <form onSubmit={handleLogin}>
+            
+            {/* ADDED noValidate to bypass buggy browser tooltips */}
+            <form onSubmit={handleLogin} noValidate>
               <div className="form-group">
                 <label>UWM Email</label>
                 <input type="email" placeholder="ePantherID@uwm.edu"
                   value={loginData.email}
-                  onChange={e => setLoginData({...loginData, email: e.target.value})} required />
+                  onChange={e => setLoginData({...loginData, email: e.target.value})} />
               </div>
               <div className="form-group">
                 <label>Password</label>
                 <input type="password" placeholder="••••••••"
                   value={loginData.password}
-                  onChange={e => setLoginData({...loginData, password: e.target.value})} required />
+                  onChange={e => setLoginData({...loginData, password: e.target.value})} />
               </div>
               {loginError && <div className="error-msg">{loginError}</div>}
               <button
@@ -287,7 +390,6 @@ export default function Login() {
             </form>
           </div>
 
-          {/* Gold bg revealed after flip */}
           <div className="half-right-bg">
             <div className="panel-content">
               <div className="panel-icon">📚</div>
@@ -301,14 +403,12 @@ export default function Login() {
             </div>
           </div>
 
-          {/* THE FLIPPING PAGE */}
           <div
             className="flip-page"
             style={{ transform: `perspective(1400px) rotateY(${angle}deg)` }}
           >
             <div className="spine-center" />
 
-            {/* FRONT FACE — gold panel */}
             <div className={`face face-front${progress < 0.5 ? ' active' : ''}`}>
               <div className="panel-content">
                 <div className="panel-icon">🎓</div>
@@ -317,14 +417,13 @@ export default function Login() {
                 <p className="panel-text">Register with your UWM email to buy and sell textbooks with fellow students.</p>
                 <button className="panel-btn" onClick={() => !animating && flipTo(1)}>
                   Register
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{marginLeft: "4px"}}>
                     <path d="M3 8h10M9 4l4 4-4 4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
                   </svg>
                 </button>
               </div>
             </div>
 
-            {/* BACK FACE — register form */}
             <div className={`face face-back${progress > 0.5 ? ' active' : ''}`}>
               <button className="back-link" onClick={() => !animating && flipTo(0)}>
                 <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
@@ -332,9 +431,11 @@ export default function Login() {
                 </svg>
                 Back to Sign In
               </button>
-              <div className="eyebrow">UWM Student Marketplace</div>
+              <div className="eyebrow" style={{marginTop: "10px"}}>UWM Student Marketplace</div>
               <div className="r-heading">Create Account</div>
-              <form onSubmit={handleRegister}>
+              
+              {/* ADDED noValidate to bypass buggy browser tooltips */}
+              <form onSubmit={handleRegister} noValidate>
                 <div className="form-group">
                   <label>Full Name</label>
                   <input type="text" placeholder="Pounce Panther"
@@ -359,10 +460,28 @@ export default function Login() {
                     value={regData.confirmPassword}
                     onChange={e => setRegData({...regData, confirmPassword: e.target.value})} />
                 </div>
+
+                <div className="tos-group">
+                  <input 
+                    type="checkbox" 
+                    id="tos" 
+                    checked={tosAccepted} 
+                    onChange={(e) => setTosAccepted(e.target.checked)} 
+                  />
+                  {/* CHANGED: Extracted the interactive button out of the label */}
+                  <label htmlFor="tos" style={{ marginRight: '4px' }}>
+                    I agree to the
+                  </label>
+                  <button type="button" className="tos-link" onClick={() => setShowTos(true)}>
+                    Terms of Service
+                  </button>
+                </div>
+
                 {regError && <div className="error-msg">{regError}</div>}
                 <button type="submit" className="submit-btn">Join the Exchange</button>
               </form>
             </div>
+
           </div>
         </div>
       </div>
