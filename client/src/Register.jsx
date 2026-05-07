@@ -10,4 +10,4 @@ export default function Register() {
   }, [navigate]);
   return null;
 }
-// changed file name
+// changed file name again
