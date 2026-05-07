@@ -86,7 +86,7 @@ export default function Login() {
         body: JSON.stringify({ fullName: regData.fullName, email: regData.email.trim().toLowerCase(), password: regData.password }),
       });
       const data = await res.json();
-      if (res.ok) navigate("/verify-email", { state: { email: regData.email.trim().toLowerCase() } });
+      if (res.ok) window.location.href = "/verify-email";
       else setRegError(data.error || data.message || "Registration failed");
     } catch { setRegError("Could not connect to server."); }
   }
