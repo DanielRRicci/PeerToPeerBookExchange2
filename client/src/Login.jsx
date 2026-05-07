@@ -420,7 +420,7 @@ export default function Login() {
               </button>
               <div className="eyebrow" style={{marginTop: "10px"}}>UWM Student Marketplace</div>
               <div className="r-heading">Create Account</div>
-              <form onSubmit={(e) => { e.preventDefault(); handleRegister(e); }} action="#" method="post">
+              <form onSubmit={(e) => { e.preventDefault(); handleRegister(e); }}>
                 <div className="form-group">
                   <label>Full Name</label>
                   <input type="text" placeholder="Pounce Panther"
