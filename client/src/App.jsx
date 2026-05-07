@@ -9,7 +9,7 @@ import {
 } from "react-router-dom";
 
 import Login           from "./Login.jsx";
-import Register        from "./Register.jsx";
+import Register        from "./register.jsx";
 import VerifyEmail     from "./VerifyEmail.jsx";
 import BookListings    from "./BookListings.jsx";
 import BookDetail      from "./Bookdetail.jsx";
