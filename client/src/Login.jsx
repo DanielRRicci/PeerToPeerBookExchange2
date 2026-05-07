@@ -56,7 +56,7 @@ export default function Login() {
   }
 
   async function handleRegister(e) {
-    e.preventDefault(); 
+    e.preventDefault();
     setRegError("");
 
     // NEW: Validation check for the Terms of Service
@@ -259,7 +259,7 @@ export default function Login() {
         }
         .submit-btn:hover { background: #222; transform: translateY(-1px); }
 
-        /* ── NEW: Terms of Service UI ── */
+        /* ── Terms of Service UI ── */
         .tos-group {
           display: flex; align-items: center; gap: 8px; margin-bottom: 14px; margin-top: 4px;
         }
@@ -274,7 +274,7 @@ export default function Login() {
         }
         .tos-link:hover { color: #c97d00; }
 
-        /* ── NEW: Terms of Service Modal ── */
+        /* ── Terms of Service Modal ── */
         .modal-overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,0.75);
           display: flex; align-items: center; justify-content: center;
@@ -307,7 +307,6 @@ export default function Login() {
         .modal-save:hover { background: #e6a800; }
       `}</style>
 
-      {/* NEW: Modal Overlay mapped to root level to avoid clipping inside the book */}
       {showTos && (
         <div className="modal-overlay" onClick={() => setShowTos(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -421,7 +420,7 @@ export default function Login() {
               </button>
               <div className="eyebrow" style={{marginTop: "10px"}}>UWM Student Marketplace</div>
               <div className="r-heading">Create Account</div>
-              <form onSubmit={handleRegister}>
+              <form onSubmit={(e) => { e.preventDefault(); handleRegister(e); }} action="#" method="post">
                 <div className="form-group">
                   <label>Full Name</label>
                   <input type="text" placeholder="Pounce Panther"
@@ -447,14 +446,12 @@ export default function Login() {
                     onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required />
                 </div>
 
-                {/* NEW: Terms of Service Checkbox */}
                 <div className="tos-group">
                   <input 
                     type="checkbox" 
                     id="tos" 
                     checked={tosAccepted} 
                     onChange={(e) => setTosAccepted(e.target.checked)} 
-                    required 
                   />
                   <label htmlFor="tos">
                     I agree to the <button type="button" className="tos-link" onClick={() => setShowTos(true)}>Terms of Service</button>
