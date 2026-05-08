@@ -9,10 +9,11 @@ export default function Login() {
   const [regData,    setRegData]    = useState({ fullName: "", email: "", password: "", confirmPassword: "" });
   const [regError,   setRegError]   = useState("");
 
+  // NEW: State for Terms of Service
   const [tosAccepted, setTosAccepted] = useState(false);
   const [showTos, setShowTos] = useState(false);
 
-  const [progress,  setProgress]  = useState(0); 
+  const [progress,  setProgress]  = useState(0); // 0 = login, 1 = register
   const [animating, setAnimating] = useState(false);
   const rafRef = useRef(null);
   const navigate = useNavigate();
@@ -37,17 +38,9 @@ export default function Login() {
 
   async function handleLogin(e) {
     e.preventDefault();
-    setLoginError("");
-
-    // NEW: Manual validation to prevent silent failures
-    if (!loginData.email.trim() || !loginData.password) {
-      setLoginError("Please enter your email and password.");
-      return;
-    }
-
     const email = loginData.email.trim().toLowerCase();
     if (!email.endsWith("@uwm.edu")) { setLoginError("Please use your UWM email (@uwm.edu)"); return; }
-    
+    setLoginError("");
     try {
       const res  = await fetch(`${getApiBaseUrl()}/api/login`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -62,43 +55,28 @@ export default function Login() {
     } catch { setLoginError("Could not reach server."); }
   }
 
-async function handleRegister(e) {
-  e.preventDefault(); 
-  setRegError("");
-  console.log("handleRegister fired");
+  async function handleRegister(e) {
+    e.preventDefault(); 
+    setRegError("");
 
-  if (!regData.fullName.trim() || !regData.email.trim() || !regData.password || !regData.confirmPassword) {
-    setRegError("Please fill out all required fields.");
-    return;
+    // NEW: Validation check for the Terms of Service
+    if (!tosAccepted) { 
+      setRegError("You must read and accept the Terms of Service to register."); 
+      return; 
+    }
+    
+    if (regData.password !== regData.confirmPassword) { setRegError("Passwords do not match!"); return; }
+    if (!regData.email.trim().toLowerCase().endsWith("@uwm.edu")) { setRegError("Please use your UWM email (@uwm.edu)"); return; }
+    try {
+      const res  = await fetch(`${getApiBaseUrl()}/api/register`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName: regData.fullName, email: regData.email.trim().toLowerCase(), password: regData.password }),
+      });
+      const data = await res.json();
+      if (res.ok) navigate("/verify-email", { state: { email: regData.email.trim().toLowerCase() } });
+      else setRegError(data.error || data.message || "Registration failed");
+    } catch { setRegError("Could not connect to server."); }
   }
-
-  if (!tosAccepted) { 
-    setRegError("You must read and accept the Terms of Service to register."); 
-    return; 
-  }
-  
-  if (regData.password !== regData.confirmPassword) { setRegError("Passwords do not match!"); return; }
-  if (!regData.email.trim().toLowerCase().endsWith("@uwm.edu")) { setRegError("Please use your UWM email (@uwm.edu)"); return; }
-
-  console.log("Validation passed, about to fetch");
-  console.log("API URL:", getApiBaseUrl());
-
-  try {
-    console.log("Fetching...");
-    const res = await fetch(`${getApiBaseUrl()}/api/register`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ fullName: regData.fullName, email: regData.email.trim().toLowerCase(), password: regData.password }),
-    });
-    console.log("Response received:", res.status);
-    const data = await res.json();
-    if (res.ok) navigate("/verify-email", { state: { email: regData.email.trim().toLowerCase() } });
-    else setRegError(data.error || data.message || "Registration failed");
-  } catch (err) { 
-    console.error("Fetch error:", err);
-    setRegError("Could not connect to server."); 
-  }
-}
-
 
   const angle     = progress * -180;
   const showFront = angle > -90; 
@@ -281,6 +259,7 @@ async function handleRegister(e) {
         }
         .submit-btn:hover { background: #222; transform: translateY(-1px); }
 
+        /* ── NEW: Terms of Service UI ── */
         .tos-group {
           display: flex; align-items: center; gap: 8px; margin-bottom: 14px; margin-top: 4px;
         }
@@ -288,13 +267,14 @@ async function handleRegister(e) {
           width: 16px; height: 16px; cursor: pointer; accent-color: #FFBD00;
         }
         .tos-group label {
-          font-size: 12px; color: #555; text-transform: none; letter-spacing: normal; margin-bottom: 0; font-weight: 500; cursor: pointer;
+          font-size: 12px; color: #555; text-transform: none; letter-spacing: normal; margin-bottom: 0; font-weight: 500;
         }
         .tos-link {
-          background: none; border: none; padding: 0; color: #0a0a0a; font-weight: 700; text-decoration: underline; text-decoration-color: #FFBD00; cursor: pointer; font-family: inherit; font-size: 12px; transition: color 0.2s;
+          background: none; border: none; padding: 0; color: #0a0a0a; font-weight: 700; text-decoration: underline; text-decoration-color: #FFBD00; cursor: pointer; font-family: inherit; font-size: inherit; transition: color 0.2s;
         }
         .tos-link:hover { color: #c97d00; }
 
+        /* ── NEW: Terms of Service Modal ── */
         .modal-overlay {
           position: fixed; inset: 0; background: rgba(0,0,0,0.75);
           display: flex; align-items: center; justify-content: center;
@@ -327,6 +307,7 @@ async function handleRegister(e) {
         .modal-save:hover { background: #e6a800; }
       `}</style>
 
+      {/* NEW: Modal Overlay mapped to root level to avoid clipping inside the book */}
       {showTos && (
         <div className="modal-overlay" onClick={() => setShowTos(false)}>
           <div className="modal-card" onClick={e => e.stopPropagation()}>
@@ -373,20 +354,18 @@ async function handleRegister(e) {
           >
             <div className="eyebrow">UWM Student Marketplace</div>
             <div className="f-heading">Sign In</div>
-            
-            {/* ADDED noValidate to bypass buggy browser tooltips */}
-            <form onSubmit={handleLogin} noValidate>
+            <form onSubmit={handleLogin}>
               <div className="form-group">
                 <label>UWM Email</label>
                 <input type="email" placeholder="ePantherID@uwm.edu"
                   value={loginData.email}
-                  onChange={e => setLoginData({...loginData, email: e.target.value})} />
+                  onChange={e => setLoginData({...loginData, email: e.target.value})} required />
               </div>
               <div className="form-group">
                 <label>Password</label>
                 <input type="password" placeholder="••••••••"
                   value={loginData.password}
-                  onChange={e => setLoginData({...loginData, password: e.target.value})} />
+                  onChange={e => setLoginData({...loginData, password: e.target.value})} required />
               </div>
               {loginError && <div className="error-msg">{loginError}</div>}
               <button
@@ -442,48 +421,44 @@ async function handleRegister(e) {
               </button>
               <div className="eyebrow" style={{marginTop: "10px"}}>UWM Student Marketplace</div>
               <div className="r-heading">Create Account</div>
-              
-              {/* ADDED noValidate to bypass buggy browser tooltips */}
-              <form onSubmit={handleRegister} noValidate>
+              <form onSubmit={handleRegister}>
                 <div className="form-group">
                   <label>Full Name</label>
                   <input type="text" placeholder="Pounce Panther"
                     value={regData.fullName}
-                    onChange={e => setRegData({...regData, fullName: e.target.value})} />
+                    onChange={e => setRegData({...regData, fullName: e.target.value})} required />
                 </div>
                 <div className="form-group">
                   <label>UWM Email</label>
                   <input type="email" placeholder="ePantherID@uwm.edu"
                     value={regData.email}
-                    onChange={e => setRegData({...regData, email: e.target.value})} />
+                    onChange={e => setRegData({...regData, email: e.target.value})} required />
                 </div>
                 <div className="form-group">
                   <label>Password</label>
                   <input type="password" placeholder="Create a password"
                     value={regData.password}
-                    onChange={e => setRegData({...regData, password: e.target.value})} />
+                    onChange={e => setRegData({...regData, password: e.target.value})} required />
                 </div>
                 <div className="form-group">
                   <label>Confirm Password</label>
                   <input type="password" placeholder="Repeat your password"
                     value={regData.confirmPassword}
-                    onChange={e => setRegData({...regData, confirmPassword: e.target.value})} />
+                    onChange={e => setRegData({...regData, confirmPassword: e.target.value})} required />
                 </div>
 
+                {/* NEW: Terms of Service Checkbox */}
                 <div className="tos-group">
                   <input 
                     type="checkbox" 
                     id="tos" 
                     checked={tosAccepted} 
                     onChange={(e) => setTosAccepted(e.target.checked)} 
+                    required 
                   />
-                  {/* CHANGED: Extracted the interactive button out of the label */}
-                  <label htmlFor="tos" style={{ marginRight: '4px' }}>
-                    I agree to the
+                  <label htmlFor="tos">
+                    I agree to the <button type="button" className="tos-link" onClick={() => setShowTos(true)}>Terms of Service</button>
                   </label>
-                  <button type="button" className="tos-link" onClick={() => setShowTos(true)}>
-                    Terms of Service
-                  </button>
                 </div>
 
                 {regError && <div className="error-msg">{regError}</div>}
